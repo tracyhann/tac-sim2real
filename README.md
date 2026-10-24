@@ -21,9 +21,15 @@ Each experiment folder is self-contained. To find a run, start from [`experiment
 
 All fine-tuning uses LoRAs on Wan2.2-Fun-A14B-Control.
 
-- **Video + touch LoRA** (`tactile_lora_*`): one canvas holds the head-camera video and a touch panel. The runs compare training on mixed real + simulation-generated rows with training on real rows only, and use held-out twin clips.
+- **Video + touch LoRA** (`tactile_lora_*`, 10-21 to 10-23): one canvas holds the head-camera video and a touch panel drawn as pixels (superseded by the value head of `2026-10-24`). The runs compare training on mixed real + simulation-generated rows with training on real rows only, and use held-out twin clips.
 - **Dual-mode LoRA** (`dual_mode_lora`): one LoRA that generates video and touch from simulation, and also estimates touch from a given video. The inpaint mask chooses the task.
 - **Diagnostics:** the loss table for the touch regression head, the inference-setting diagnosis, the depth-control ablation, and touch estimation on released videos.
+- **HF25 control comparison** (`2026-10-24/`, branch `for-amir`): three video + touch LoRAs on the 25 pairs of the public release
+  [tracyhan816/mug-sim2video-pose-tactile](https://huggingface.co/datasets/tracyhan816/mug-sim2video-pose-tactile), differing only
+  in the control video (FHN: scene depth + simulated hand / mug; SVO: simulation render only; CDS: cube-scene depth + render). The
+  touch is a value array output by a small head on the diffusion transformer's tokens (no pixel panel), normalised per replay.
+  The runbook [`experiments/finetune/2026-10-24/README.md`](experiments/finetune/2026-10-24/README.md) lists the downloads
+  (weights, VideoX-Fun commit, data), the dataset build, the launch commands and the evaluation.
 
 ## Dependencies
 

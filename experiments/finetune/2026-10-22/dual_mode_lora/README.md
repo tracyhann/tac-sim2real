@@ -29,6 +29,12 @@ Baselines: R6 regressor (../../2026-10-23/dual_mode_loss_table), twin sim touch,
 srun step. Parts: prep, U|G|E|R_high|low, ev_<RUN>_<epoch>, regr, regrsp, diag.
 **Outputs.** `out/` -> outputs/R2S2V_mug/lora_ge (dataset/, <RUN>_<expert>/ checkpoints, out/ predictions, eval/ tables,
 videos/); markers outputs/R2S2V_mug/done_exp_lora_ge_<part>; logs `logs/` -> logs/lora_ge + logs/r2s2v/pool_cfix_r2s2r_ge_*.log.
-**Status (2026-10-23 16:30 CDT).** U, G_high, E_high trained; E_low / G_low / R running or queued; first U eval re-running
-with the fixed protocol. Running notes: side-session notes `dual_mode_lora_notes.md`.
+**Results (2026-10-23, report https://claude.ai/artifact/26Cczn3TBS73nZ6HgXS9Lt, built by report/build_report.py from eval/scores.json).**
+- One model for both jobs: not yet. G: U's video stops following the sim control (mug IoU vs sim 0.12; G-only 0.63-0.67, G-only epoch 4
+  0.68 at the same per-job exposure, real video 0.60, zero-shot 0.81) -> interference between the jobs. E: U and E-only are a draw
+  (actor_01 total r 0.42 vs 0.66, F1@6mm 0.32 vs 0.31); both below the R6 regressor (r 0.79-0.85, F1 0.40-0.41).
+- Sim data for estimation: not clearly. E (real + sim) vs R (real only) at 8 passes: better timing / magnitude, worse F1; at equal steps
+  (E epoch 4 vs R epoch 8) the same. Regressor: sim rows help on the mug twins (r 0.77 vs 0.47), cost a little on actor_01 (0.79 vs 0.85).
+- Next: E-job loss on the panel only (stop teaching "copy the given video"), D1 panel weight, D2 R6 loss on the decoded panel.
+All parts done (dispatcher and cap guard exited). Running notes: side-session notes `dual_mode_lora_notes.md`.
 **Live code.** `code/` here IS the live code; `experiments/R2S2V_mug/lora_ge` is a symlink to it (old paths keep working).

@@ -11,7 +11,9 @@ Both: control = the video's own sim control (854 x 480 -> 832 x 480 + black 256 
 video's generation prompt + the panel sentence both LoRAs were trained with. The round-6 head videos were U's training rows.
 Cases: cases.json (made on the Mac from the release bundle). Writes outputs/R2S2V_mug/release_estimate/<model>/<id>.mp4 (canvas),
 <id>_tactile.npy ((81, 880): relative for U8, N for f2) and <id>.json.
-  envs/videoxfun/bin/python predict_release.py --model U8|f2 --group r10|r8b|r6"""
+  E8 / R8 (added 2026-10-24, user: "do you have E, R and f2 results?"): the dual-mode estimate-only runs at epoch 8, E (real + sim
+       rows, checkpoint-632) and R (real rows only, checkpoint-320), same job-E protocol as U8; relative touch
+  envs/videoxfun/bin/python predict_release.py --model U8|f2|E8|R8|E4 --group r10|r8b|r6"""
 import argparse
 import json
 import sys
@@ -33,7 +35,10 @@ import tactile_panel  # noqa: E402  (f2: panel v1, N)
 H, W, X0, N = 480, 1088, 832, 81
 PANEL = " On the right, a grey touch map of the left glove: each cell is one sensor, brighter is pressed harder; the bars below are the total force per finger."
 MODELS = {"U8": (R / "outputs/R2S2V_mug/lora_ge" / "U_{}" / "checkpoint-632.safetensors", panel_v3.decode),
-          "f2": (R / "outputs/R2S2V_mug/lora_tactile" / "f2_{}" / "checkpoint-600.safetensors", tactile_panel.decode)}
+          "f2": (R / "outputs/R2S2V_mug/lora_tactile" / "f2_{}" / "checkpoint-600.safetensors", tactile_panel.decode),
+          "E8": (R / "outputs/R2S2V_mug/lora_ge" / "E_{}" / "checkpoint-632.safetensors", panel_v3.decode),      # 10-24: estimate-only runs
+          "R8": (R / "outputs/R2S2V_mug/lora_ge" / "R_{}" / "checkpoint-320.safetensors", panel_v3.decode),
+          "E4": (R / "outputs/R2S2V_mug/lora_ge" / "E_{}" / "checkpoint-316.safetensors", panel_v3.decode)}    # E at R8's step count (mixed vs real at equal steps)
 OUT = R / "outputs/R2S2V_mug/release_estimate"
 
 
@@ -73,7 +78,7 @@ def main():
         kv = float(np.abs(fr[:, :, :X0].astype(np.float32) - v[:, :, :X0] * 255).mean())     # the given video must come back
         (od / f"{c['id']}.json").write_text(json.dumps(dict(case=c, model=a.model, lora=[str(lo), str(hi)], steps=a.steps, guidance=a.guidance, seed=a.seed,
                                                            ref_image=False, seconds=round(sec, 1), known_mae=round(kv, 2),
-                                                           touch_units="relative F / S" if a.model == "U8" else "N"), indent=1))
+                                                           touch_units="N" if a.model == "f2" else "relative F / S"), indent=1))
         print(a.model, c["id"], f"{sec:.0f}s known-part MAE {kv:.2f} total max {P.sum(1).max():.2f}", flush=True)
     print("group done", a.model, a.group, flush=True)
 

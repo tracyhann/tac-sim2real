@@ -1,0 +1,175 @@
+<title>Dual-Mode Touch LoRA</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* layout: one reading column; verdict first, evidence after; wide tables scroll inside their own frames */
+:root{
+  --bg:#f4f6f5; --panel:#ffffff; --ink:#16201c; --muted:#5b6a65; --line:#dce2df;
+  --accent:#0b6b5f; --accent-soft:#e0eeea; --warn:#9a520d; --warn-soft:#f6e8d7; --best:#0b6b5f;
+  --display:"Newsreader", Georgia, "Times New Roman", serif; --body:"Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111614; --panel:#19201d; --ink:#e5ebe8; --muted:#97a6a1; --line:#2a3330;
+  --accent:#5fc4b1; --accent-soft:#1b302b; --warn:#e2a265; --warn-soft:#382817; --best:#7fd6c4; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111614; --panel:#19201d; --ink:#e5ebe8; --muted:#97a6a1; --line:#2a3330;
+  --accent:#5fc4b1; --accent-soft:#1b302b; --warn:#e2a265; --warn-soft:#382817; --best:#7fd6c4; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font:16px/1.6 var(--body)}
+.wrap{max-width:1120px;margin:0 auto;padding-block:32px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:44px}
+.kicker{font:500 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+h1{font:600 clamp(32px,4.6vw,48px)/1.1 var(--display);margin:8px 0 12px;text-wrap:balance}
+h2{font:600 26px/1.25 var(--display);margin:0 0 6px;text-wrap:balance}
+h3{font:600 16px/1.4 var(--body);margin:0 0 6px}
+p{margin:0 0 10px;max-width:72ch}
+.lede{font-size:18px;color:var(--muted);max-width:74ch}
+section{display:grid;gap:14px;min-width:0}
+.note{color:var(--muted);font-size:14.5px;max-width:90ch}
+.verdict{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(440px,100%),1fr));gap:16px}
+.q{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;display:grid;gap:8px;align-content:start;min-width:0}
+.q .ask{font:500 13px/1.4 var(--mono);color:var(--muted);letter-spacing:.02em}
+.q .ans{font:600 24px/1.2 var(--display);color:var(--warn)}
+.q ul{margin:0;padding-left:18px;display:grid;gap:8px;font-size:15px}
+.next{border-left:3px solid var(--accent);padding:2px 0 2px 16px;display:grid;gap:6px}
+.next ol{margin:0;padding-left:20px;display:grid;gap:6px;font-size:15px;max-width:95ch}
+dl.setup{display:grid;grid-template-columns:minmax(120px,190px) minmax(0,1fr);gap:10px 20px;margin:0;font-size:15px}
+dl.setup dt{font:500 13px/1.6 var(--mono);color:var(--muted)}
+dl.setup dd{margin:0;max-width:85ch}
+@media (max-width:620px){dl.setup{grid-template-columns:1fr}dl.setup dd{margin-bottom:6px}}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;min-width:900px;font-size:13.5px;font-variant-numeric:tabular-nums}
+table.narrow{min-width:560px}
+caption{caption-side:top;text-align:left;padding:12px 14px 8px;color:var(--muted);font-size:13.5px}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+thead th{font:500 12px/1.3 var(--mono);color:var(--muted);background:var(--accent-soft);vertical-align:bottom;white-space:normal;min-width:64px}
+tbody th{text-align:left;font-weight:500;white-space:normal;min-width:220px}
+td{font-family:var(--mono);font-size:13px}
+td.n{color:var(--muted)}
+tr.grp th{background:var(--bg);font:600 13px/1.4 var(--body);color:var(--ink);padding-top:12px}
+tr.lora th{color:var(--ink);font-weight:600}
+tr.base th,tr.base td{color:var(--muted)}
+td.best{color:var(--best);font-weight:600}
+.vids{display:grid;gap:22px}
+figure.vid{margin:0;display:grid;gap:6px;min-width:0}
+figure.vid video{width:100%;max-width:100%;border-radius:8px;background:#000;display:block}
+figure.vid figcaption{font-size:14px;color:var(--muted);max-width:100ch}
+figure.vid figcaption b{color:var(--ink);font-weight:600}
+.two{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.two{grid-template-columns:1fr}}
+.formula{font:14px/1.7 var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;overflow-x:auto;white-space:pre}
+ul.facts{margin:0;padding-left:18px;display:grid;gap:8px;max-width:95ch;font-size:15px}
+footer{border-top:1px solid var(--line);padding-top:14px;color:var(--muted);font-size:13.5px;display:grid;gap:4px}
+code{font:13px var(--mono);background:var(--accent-soft);padding:1px 5px;border-radius:4px}
+a{color:var(--accent)}
+</style>
+
+<div class=wrap>
+<header>
+  <div class=kicker>Wan2.2-Fun-A14B-Control · LoRA · held-out evaluation · 23 Oct 2026</div>
+  <h1>Dual-Mode Touch LoRA</h1>
+  <p class=lede>One LoRA was trained to do two jobs on the same 1088 × 480 canvas (video on the left, the glove's 880-taxel touch panel on the right): generate video and paired touch from a simulation (G), and estimate touch from a given video (E). The inpaint mask picks the job. These are the results on clips it never saw, against single-task runs and baselines.</p>
+</header>
+
+<section aria-labelledby=v-h>
+  <h2 id=v-h>Verdict</h2>
+  <div class=verdict>
+    <div class=q>
+      <div class=ask>Can one model do both jobs without losing to the single-task models?</div>
+      <div class=ans>No, not yet</div>
+      <ul>
+        <li><b>Generation breaks.</b> U's video stops following the sim control: mug IoU {{G_U_MUG}} against {{G_G_MUG}} for G-only (real video {{G_REAL_MUG}}, zero-shot A14B {{G_ZS_MUG}}). The hand stays at its start pose. G-only at epoch 4, with the same exposure to G as U at epoch 8, still reaches {{G_G4_MUG}}, so this is interference between the jobs, not too little training.</li>
+        <li><b>Estimation is a draw.</b> On the new participant U reaches total r {{A01_U_R}} and contact F1 {{A01_U_F1}}, E-only {{A01_E_R}} / {{A01_E_F1}}. Both stay below a small discriminative regressor (r {{A01_REG_R}}, F1 {{A01_REG_F1}}).</li>
+      </ul>
+    </div>
+    <div class=q>
+      <div class=ask>Does sim data help estimation on held-out real clips?</div>
+      <div class=ans>Not clearly</div>
+      <ul>
+        <li><b>Equal passes (8):</b> E (real + sim rows) beats R (real rows only) on timing and magnitude (total MAE {{A01_E_MAE}} vs {{A01_R_MAE}} × S) and loses on contact location (F1 {{A01_E_F1}} vs {{A01_R_F1}}). R also had half the optimizer steps.</li>
+        <li><b>Equal steps</b> (E epoch 4, 316 steps vs R epoch 8, 320 steps): the two match (r {{A01_E4_R}} vs {{A01_R_R}}, F1 {{A01_E4_F1}} vs {{A01_R_F1}}, MAE {{A01_E4_MAE}} vs {{A01_R_MAE}}). The gain comes from more training, not from the sim rows.</li>
+        <li><b>In the regressor</b> the sim rows help on the mug twins (r {{TW_REG_R}} vs {{TW_REGR_R}}) and cost a little on the new participant ({{A01_REG_R}} vs {{A01_REGR_R}}).</li>
+      </ul>
+    </div>
+  </div>
+  <div class=next>
+    <h3>What to change next</h3>
+    <ol>
+      <li>Compute the E job's loss on the touch panel only. The E job also trains the model to copy the given video, which is the likely cause of U copying frame 0 when it should generate.</li>
+      <li>Weight the panel in the latent loss (D1, implemented as <code>--ge_panel_loss_weight</code>). The panel is 15.5 % of latent positions, and touch stays under-learned even in E-only and G-only.</li>
+      <li>Add the R6 loss on the decoded panel at low noise (D2). R6 won the loss comparison below.</li>
+    </ol>
+  </div>
+</section>
+
+<section aria-labelledby=s-h>
+  <h2 id=s-h>Setup</h2>
+  <dl class=setup>
+    <dt>jobs</dt><dd><b>G</b>: frame 0 known (with its touch in half the samples), the rest unknown, control = sim render (scene depth + shadowless sim hand and mug). <b>E</b>: all 81 video frames known, the touch panel unknown, control = the clip's own Depth Anything V2 depth, or the sim control when a twin exists. VideoX-Fun's random masks are never used.</dd>
+    <dt>touch</dt><dd>Relative (panel v3): each episode's touch is divided by its own scale S, the median total force over its contact frames. The model never sees S. Caps {{CAP_T}} S per taxel and {{CAP_B}} S per finger bar ({{CLIP_T}} % of contact readings and {{CLIP_F}} % of frames clip).</dd>
+    <dt>data</dt><dd>Train 79 rows: 40 real TouchScale clips (left hand; actor_09 mug, actor_10 cup, actor_05 spray bottle, actor_04 cup and egg) and 39 sim rows (zero-shot A14B videos under sim controls from 7 cameras of the edf79415 / 53780879 twins, the palm-press variant and 8 counterfactuals, each with its own sim touch). Test: participant actor_01 entirely (8 clips, mug with water), the held-out twins 55494490 / 4397541c (real video), and their zero-shot generated videos. Every stream is resampled to the canvas times and checked automatically.</dd>
+    <dt>runs</dt><dd>Both experts, rank 64, alpha 32, lr 1e-4, 8 passes over each run's rows. <b>U</b> both jobs 50 / 50 (632 steps), <b>G</b> G only (632), <b>E</b> E only (632), <b>R</b> E only on the 40 real rows (320).</dd>
+    <dt>inference</dt><dd>E without classifier-free guidance and without a reference image (30 steps); G at guidance 6 with the start frame as reference image (50 steps). Guidance 6 in E regenerated the given video colour-distorted, even on training clips.</dd>
+    <dt>metrics</dt><dd>Contact location and timing first: contact F1 with 6 mm blocks and per pad (relative threshold {{THR}} S, ≈ 0.15 N at the median S of {{S_MED}} N), contact-time IoU, onset error. Then the force course (total and per-finger Pearson r, load-share error) and magnitude (total MAE in units of S; newtons only with the true S).</dd>
+  </dl>
+</section>
+
+<section aria-labelledby=e-h>
+  <h2 id=e-h>Estimate: touch from a given video</h2>
+  <p class=note>The twin windows start mid-grasp, so "real frame-0 touch, repeated" is a strong baseline there and is zero on actor_01's windows, which start 1 s before contact. It knows frame 0's touch; no model does in E.</p>
+  {{E_TABLE}}
+</section>
+
+<section aria-labelledby=g-h>
+  <h2 id=g-h>Generate: video and touch from a simulation</h2>
+  <p class=note>Video adherence is IoU of the generated mug and hand (SAM3) with the simulation's silhouettes. The h2 row is the earlier LoRA trained on 6 canvases of the twins' task for 100 passes and scored in newtons, so only its r and IoU columns compare directly.</p>
+  {{G_TABLE}}
+</section>
+
+<section aria-labelledby=vid-h>
+  <h2 id=vid-h>Held-out clips side by side</h2>
+  <p class=note>Every touch panel is decoded and redrawn with the same encoding. The estimate videos show the given video, not the regenerated one.</p>
+  <div class=vids>
+{{VIDEOS}}
+  </div>
+</section>
+
+<section aria-labelledby=l-h>
+  <h2 id=l-h>Which loss for touch</h2>
+  <p>To pick the loss for the diffusion model, seven losses were compared on a small regression head (frozen Wan VAE latents of the video → 880 taxels), with the same data, split and steps. Plain L1 collapses to all-zero output on this sparse target, with either output head. The total + optimal-transport loss (R6) wins the inner split and leads on force course, load share and magnitude. R1's ×10 weight on active taxels gives the best contact location on the twins.</p>
+  {{LT_TABLE}}
+</section>
+
+<section aria-labelledby=n-h>
+  <h2 id=n-h>Relative touch</h2>
+  <div class=two>
+    <div>
+      <p>Grip force depends on mass, friction and each person's margin, none of which RGB shows. Contact location, timing and how the fingers share the load are visible. So the panel encodes force relative to the episode's own scale:</p>
+      <div class=formula>F(t, i) = S · a(t) · p(t, i)
+S       median total force over contact frames
+        (total &gt; 1 N), whole episode; never shown
+a(t)    total force(t) / S
+p(t, i) taxel i's share of the load at t
+panel   24 + 231 · √( min(F / S, {{CAP_T}}) / {{CAP_T}} )</div>
+      <p class=note>S is per episode, so every window of an episode shares one scale. A per-window scale would blow up approach-only windows; a per-taxel or per-frame scale would erase which finger presses harder and how force rises and falls.</p>
+    </div>
+    <div>{{S_TABLE}}<p class=note>S varies about 6× between participants and only 14–24 % within one. The held-out participant grips twice as hard as the training mug participant.</p></div>
+  </div>
+</section>
+
+<section aria-labelledby=c-h>
+  <h2 id=c-h>Findings and caveats</h2>
+  <ul class=facts>
+    <li><b>Guidance in estimation:</b> at guidance 6 the model regenerates the given video with a strong colour shift (22–39 grey levels of error even on training clips) and inflates the panel. At guidance 1 the video comes back within 2–3 levels. All E numbers here use guidance 1.</li>
+    <li><b>Touch is under-learned by the plain latent loss.</b> Even on one of its own training clips (actor_10), U at guidance 1 estimates total force with r 0.07. The panel is a small part of the latent, and in E most of the loss falls on the given video.</li>
+    <li><b>The twin's own simulated touch</b> is the best estimate of the force course where a twin exists (r {{TW_SIM_R}} on the held-out twins). The models do not reach it.</li>
+    <li><b>Small twin test set:</b> two held-out twin clips; the actor_01 group has 8 clips. Read twin rows as indicative.</li>
+    <li><b>Data checks:</b> each real canvas frame was checked against the head frame nearest its time (a frame-index copy would have been 12–36 grey levels off). Two twin replays were rewritten after their controls were rendered, so the sim touch shown with those videos is the version the controls were rendered from.</li>
+  </ul>
+</section>
+
+<footer>
+  <div>Code and README: Vision <code>experiments/finetune/2026-10-22/dual_mode_lora/</code> (live code; <code>experiments/R2S2V_mug/lora_ge</code> links to it). Outputs: <code>outputs/R2S2V_mug/lora_ge/</code> (eval/scores.json, eval/loss_table.md, videos/).</div>
+  <div>Loss comparison: <code>experiments/finetune/2026-10-23/dual_mode_loss_table/</code>. Inference diagnostic: <code>experiments/finetune/2026-10-23/dual_mode_infer_diag/</code>.</div>
+</footer>
+</div>
