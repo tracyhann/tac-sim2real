@@ -1,0 +1,11 @@
+out/
+logs/
+__pycache__/
+*.pyc
+*.bak_*
+.DS_Store
+*.safetensors
+*.ckpt
+*.pt
+*.mp4
+*.npz
