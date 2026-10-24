@@ -27,3 +27,6 @@ that are done or looping). Never start a second loop by hand.
 passed 2026-10-24 06:02). **Dataset rebuild:** `rm -rf $R/outputs/R2S2V_mug/hf25/dataset && $R/envs/armA/bin/python
 _common/code/build_hf25.py` (CPU, ~10 min; needs the sim renders under `outputs/B_sim2wm/sim/`; the twins' cube controls come
 from `mac/twin_cubes.sh`).
+
+**Runs.** FHN_high + FHN_low (head v1) trained 10-24 08:37-13:11, evaluated 14:24 (`eval/table_v1_head.md`, outputs `out_v1/`,
+run dir `FHN_low_v1`); FHN_low retrained with head v2 from 10-24 ~15:10 (`FHN/code/launch.sh` again; FHN_high reused).

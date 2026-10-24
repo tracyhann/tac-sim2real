@@ -31,7 +31,8 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--arm", required=True, choices=["FHN", "SVO", "CDS"]); ap.add_argument("--ckpt", type=int, required=True)
     ap.add_argument("--cases", nargs="*", default=None); ap.add_argument("--seeds", nargs="+", type=int, default=[0])
     ap.add_argument("--guidance", type=float, default=6.0); ap.add_argument("--steps", type=int, default=50); ap.add_argument("--no_ref", action="store_true")
-    a = ap.parse_args(); tag = f"{a.arm}c{a.ckpt}"; od = O / "out" / tag; od.mkdir(parents=True, exist_ok=True)
+    ap.add_argument("--suffix", default="", help="output tag suffix for probes (e.g. _noref); default = the arm's main output")
+    a = ap.parse_args(); tag = f"{a.arm}c{a.ckpt}{a.suffix}"; od = O / "out" / tag; od.mkdir(parents=True, exist_ok=True)
     lo, hi, hd = O / f"{a.arm}_low" / f"checkpoint-{a.ckpt}.safetensors", O / f"{a.arm}_high" / f"checkpoint-{a.ckpt}.safetensors", O / f"{a.arm}_low" / f"tactile_head-{a.ckpt}.pt"
     assert lo.exists() and hi.exists() and hd.exists(), (lo, hi, hd)
     cases = [c for c in json.loads((DS / "test_cases.json").read_text()) if a.cases is None or c["case"] in a.cases]
@@ -60,13 +61,13 @@ def main():
             out = pipe(c["text"], num_frames=N, negative_prompt=NEG_PROMPT, height=H, width=W, generator=g, guidance_scale=a.guidance,
                        num_inference_steps=a.steps, video=video, mask_video=mask, control_video=cv, control_camera_video=None, ref_image=ref,
                        boundary=boundary, shift=5).videos
-            x = cap[0][-1:]                                                   # last call = last step (low expert); CFG batch = [uncond, cond]
-            u = head(video_tokens(x, HW, F_LAT, not a.no_ref), HW, torch.from_numpy(u0)[None].cuda())[0].float().cpu().numpy()
+            x = cap[0][-1:]; e = cap[1][-1:] if cap[1] is not None else None   # last call = last step (low expert); CFG batch = [uncond, cond]
+            u = head(video_tokens(x, HW, F_LAT, not a.no_ref), HW, torch.from_numpy(u0)[None].cuda(), e)[0].float().cpu().numpy()
         fr = (out[0].permute(1, 2, 3, 0).float().clamp(0, 1).cpu().numpy() * 255).round().astype(np.uint8); sec = time.time() - t
         name = f"{c['case']}_s{seed}"; write_video(od / f"{name}.mp4", fr, fps=16); np.save(od / f"{name}_tactile.npy", rel_from_u(u))
         kv = float(np.abs(fr[0].astype(np.float32) - st.astype(np.float32)).mean())
         if c["kind"] == "heldout":
-            gd = GEN_DIR / f"w-hf25{a.arm.lower()}c{a.ckpt}-{c['source']}" / c["clip"]; gd.mkdir(parents=True, exist_ok=True)
+            gd = GEN_DIR / f"w-hf25{a.arm.lower()}c{a.ckpt}{a.suffix}-{c['source']}" / c["clip"]; gd.mkdir(parents=True, exist_ok=True)
             write_video(gd / f"seed{seed}.mp4", fr, fps=16)
             (gd / f"seed{seed}.json").write_text(json.dumps(dict(model=gd.parent.name, clip=c["clip"], seed=seed, width=W, height=H, frames=N, fps=16, steps=a.steps,
                                                                   control=f"HF25 LoRA {a.arm} step {a.ckpt}: {c['control'][a.arm]}; start = {c['source']} frame 0 (+ its touch to the head)",

@@ -16,6 +16,12 @@ runs them (downloads, layout, dataset build, launch, monitoring, eval): [../READ
   of a counterfactual replay of clip edf79415 + that replay's simulated touch of the left glove (880 channels per frame).
   Groups: r6 head (6), r8b head + top photo (12), r10 user frames (7). Variants: recorded, grip 30 %, friction x0.5,
   +300 g water, 10x fast, +-60 mm shake, claw, rim pinch.
+- **Touch head v2 (10-24 afternoon, after the first FHN run).** v1 (plain sigmoid, R1 loss only) tracked the force course (r 0.7)
+  but at 2x the magnitude on every case including training rows and never released: 880 per-sensor errors of ~0.01 add up to ~1 S,
+  which a per-sensor loss does not see, and a sigmoid floor never reaches 0; passing / not passing the reference image made no
+  difference (probe). v2 = squared-sigmoid decode, + per-frame total-force L1 in the loss, + the DiT's timestep embedding as a
+  head input (training reads at random noise levels, inference at the last step). FHN_low was retrained with v2 (the v1 run is
+  kept as `FHN_low_v1`, its table as `eval/table_v1_head.md`); FHN_high (video only) is unchanged. All arms use v2.
 - **Touch = values, not pixels (user 10-24).** The F / H runs drew the touch as a grey panel beside the video and read it back
   from pixels; that is gone. Here the video is the plain 832 x 480 clip and the touch is an (81, 880) array. A light head
   (`hf25_patch.TactileHead`, ~13 M params; UVA / UVTA-style decoupled head) reads the low-noise expert's last-layer video

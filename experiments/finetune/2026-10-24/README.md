@@ -14,7 +14,7 @@ withheld for this internal test: call it "W" everywhere — file names, labels, 
 that, from a first frame + a control video + a text prompt, it generates a 5 s video of a hand carrying a mug AND the paired
 reading of the TouchScale tactile glove: 880 sensors x 81 frames. The touch is a value array, never an image: a small head on
 the low-noise expert's last-layer tokens outputs it and is trained together with the LoRA (video flow-matching loss + touch
-regression loss). Three arms share the 25 training pairs, prompts, steps and settings; only the control video differs:
+loss: per-sensor R1 + per-frame total force; squared-sigmoid decode; the head also sees the DiT's timestep embedding). Three arms share the 25 training pairs, prompts, steps and settings; only the control video differs:
 
 | arm | control video | what it tests |
 |---|---|---|

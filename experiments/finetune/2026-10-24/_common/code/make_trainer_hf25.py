@@ -1,4 +1,4 @@
-"""Write scripts/wan2.2_fun/train_control_lora_hf25.py: a COPY of VideoX-Fun's train_control_lora.py (already carrying the
+"""Write scripts/wan2.2_fun/train_control_lora_hf25.py (head v2, see hf25_patch.py): a COPY of VideoX-Fun's train_control_lora.py (already carrying the
 opt-in --inpaint_first_frame_only and --resume_lora_weights patches) with the opt-in touch head of hf25_patch.py (copied
 next to it). The shared train_control_lora.py is not touched: other runs relaunch it after every preemption.
   --tactile_head          rows carry "tactile" (npz with u (81, 880)); TactileHead on the DiT's last-layer video tokens
@@ -109,10 +109,10 @@ sub('''                loss = custom_mse_loss(noise_pred.float(), target.float()
                 if args.tactile_head:
                     from hf25_patch import tactile_loss, video_tokens
                     _hw = (noisy_latents.shape[3] // 2) * (noisy_latents.shape[4] // 2); _f = noisy_latents.shape[2]
-                    _xt = video_tokens(_tcap[-1], _hw, _f, bool(args.add_full_ref_image_in_self_attention)); _tcap.clear()
+                    _xt = video_tokens(_tcap[0], _hw, _f, bool(args.add_full_ref_image_in_self_attention)); _te = _tcap[1]; _tcap.clear()
                     _tu = batch["tactile"].to(_xt.device).float()
                     assert _tu.shape[1] == 4 * (_f - 1) + 1, (tuple(_tu.shape), _f)
-                    _pred = accelerator.unwrap_model(transformer3d).tactile_head(_xt, _hw, _tu[:, 0])
+                    _pred = accelerator.unwrap_model(transformer3d).tactile_head(_xt, _hw, _tu[:, 0], _te)
                     _tl = tactile_loss(_pred, _tu); loss = loss + args.tactile_lambda * _tl; _tlog["tactile"] = _tl.detach().item()
 ''')
 sub('''            logs = {"step_loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}''',

@@ -37,7 +37,7 @@ sys.path.insert(0, "$C")
 from hf25_patch import TactileHead
 sd = torch.load("$RUN/tactile_head-4.pt", map_location="cpu"); h = TactileHead(256); h.load_state_dict(sd); print("head loads:", len(sd), "tensors")
 log = open("$RUN/log.txt").read(); tl = [float(x) for x in re.findall(r"tactile=([0-9.eE+-]+|nan)", log) if x != "nan"]
-print("tactile losses logged:", len(tl), tl[:6]); assert tl and all(t == t and t < 10 for t in tl), "tactile loss missing or not finite"
+print("tactile losses logged:", len(tl), tl[:6]); assert tl and all(t == t and t < 50 for t in tl), "tactile loss missing or not finite"   # v2 loss includes the total-force term (units of S)
 EOF
 touch $R/outputs/R2S2V_mug/done_exp_hf25_smoke   # the pool_retry loop of launch_smoke.sh stops on this marker
 echo "smoke test passed $(date +%T)"
