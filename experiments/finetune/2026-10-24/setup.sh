@@ -28,6 +28,7 @@ PY=$R/envs/videoxfun/bin/python
 if [ ! -x $PY ]; then
   if command -v uv > /dev/null; then uv venv --python 3.12 $R/envs/videoxfun; else python3.12 -m venv $R/envs/videoxfun; fi
 fi
+$PY -m pip --version > /dev/null 2>&1 || $PY -m ensurepip --upgrade > /dev/null 2>&1 || uv pip install --python $PY pip   # uv venvs ship without pip
 $PY -m pip install -q --upgrade pip
 $PY -m pip install -q -r $V/requirements.txt
 $PY -m pip install -q -r $HERE/env/requirements.txt
