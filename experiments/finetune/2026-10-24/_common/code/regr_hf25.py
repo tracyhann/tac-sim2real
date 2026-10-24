@@ -1,4 +1,5 @@
-"""Reference row "world-model video + a separate touch estimator" (train.sh part ev_<ARM>_<CK>, after predict_hf25.py):
+"""OPTIONAL reference row (needs the TouchScale glove geometry file, so it runs on the original cluster only): "world-model video +
+a separate touch estimator" (train.sh part ev_<ARM>_<CK>, after predict_hf25.py):
 the R6 head of the loss table (dual_mode_lora/code/loss_table.py: frozen Wan VAE latents -> 3D conv + temporal trunk -> relative
 total x Sinkhorn load share; lam 0.01 as chosen there), trained on the 25 HF rows' video latents and touch (seed 0, 150 epochs,
 ~2 min on one card), then applied to the arm's generated test videos. Against the arm's own head this shows what the backbone's
@@ -7,6 +8,7 @@ Writes outputs/R2S2V_mug/hf25/out/<ARM>c<CK>_regr/<case>_s<seed>_tactile.npy (re
   envs/videoxfun/bin/python regr_hf25.py --arm FHN --ckpt 500 [--seed 0]"""
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -15,8 +17,9 @@ import cv2
 import numpy as np
 import torch
 
-R = Path("/scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r"); GE = R / "experiments/finetune/2026-10-22/dual_mode_lora/code"
+R = Path(os.environ.get("R2S2R") or "/scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r"); GE = Path(__file__).resolve().parents[2] / "2026-10-22/dual_mode_lora/code"
 sys.path.insert(0, str(GE)); sys.path.insert(0, str(R / "third_party/VideoX-Fun"))
+assert (R / "data/TouchScale/metadata/glove_geometry_left.json").exists(), "regr_hf25 needs the TouchScale glove geometry (loss_table Sinkhorn costs): optional reference row, skipped elsewhere"
 import loss_table as LT  # noqa: E402
 
 O = R / "outputs/R2S2V_mug/hf25"; DS = O / "dataset"; LAT = O / "regr" / "lat"; LT.DS = DS          # loss_table.target reads DS / row["tactile"] (touch_rel)

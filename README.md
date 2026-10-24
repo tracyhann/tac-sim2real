@@ -28,8 +28,11 @@ All fine-tuning uses LoRAs on Wan2.2-Fun-A14B-Control.
   [tracyhan816/mug-sim2video-pose-tactile](https://huggingface.co/datasets/tracyhan816/mug-sim2video-pose-tactile), differing only
   in the control video (FHN: scene depth + simulated hand / mug; SVO: simulation render only; CDS: cube-scene depth + render). The
   touch is a value array output by a small head on the diffusion transformer's tokens (no pixel panel), normalised per replay.
-  The runbook [`experiments/finetune/2026-10-24/README.md`](experiments/finetune/2026-10-24/README.md) lists the downloads
-  (weights, VideoX-Fun commit, data), the dataset build, the launch commands and the evaluation.
+  Self-contained: the runbook [`experiments/finetune/2026-10-24/README.md`](experiments/finetune/2026-10-24/README.md) links every
+  download (weights on Hugging Face, the VideoX-Fun commit, the prepared training set
+  [tracyhan816/mug-video-touch-lora-hf25](https://huggingface.co/datasets/tracyhan816/mug-video-touch-lora-hf25)), `setup.sh`
+  installs the environment (`env/requirements.txt`) and fetches everything, `train.sh` trains and evaluates. Start there
+  (or at [`AGENTS.md`](AGENTS.md)).
 
 ## Dependencies
 
@@ -37,4 +40,4 @@ The scripts expect:
 - [VideoX-Fun](https://github.com/aigc-apps/VideoX-Fun) (Apache-2.0) and the Wan2.2-Fun-A14B-Control weights;
 - the TouchScale data.
 
-Some scripts patch a copy of the VideoX-Fun LoRA trainer at run time (for example `make_trainer.py`); the trainer itself is not included. Paths in the scripts point at the original cluster layout, so set them for your machine. Model weights, datasets and outputs are not in this repository.
+Some scripts patch a copy of the VideoX-Fun LoRA trainer at run time (for example `make_trainer.py`); the trainer itself is not included. The 2026-10-24 experiment is portable (root via the `R2S2R` environment variable, `setup.sh` does the installation); the older experiment folders are records of runs on the authors' cluster and keep that cluster's paths. Model weights, datasets and outputs are not in this repository.

@@ -10,21 +10,24 @@ Reference rows next to every arm:
   h2 step 600 [ABSOLUTE]        real-start cases: the earlier held-out F / H LoRA, scored the old absolute way (panel v1;
                                 comparable on the r columns only)
   zero-shot A14B / real video   mug / hand IoU only
-Onset is uninformative when the target is in contact from frame 0 (the sim touch is). Writes outputs/R2S2V_mug/hf25/eval/
-{scores.json, table.md}; every arm / checkpoint folder in hf25/out/ is scored.
+Onset is uninformative when the target is in contact from frame 0 (the sim touch is). Writes $R2S2R/outputs/R2S2V_mug/hf25/eval/
+{scores.json, table.md}; every arm / checkpoint folder in hf25/out/ is scored. Reference rows whose inputs are not present (the
+earlier runs' outputs, the mug / hand IoU jsons) are left out, so the script works outside the original cluster too.
   envs/armA/bin/python score_hf25.py"""
 import json
+import os
 import sys
 from pathlib import Path
 
 import numpy as np
 
-R = Path("/scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r"); DM = R / "experiments/finetune/2026-10-22/dual_mode_lora/code"
+HERE = Path(__file__).resolve().parent; DM = HERE.parents[2] / "2026-10-22/dual_mode_lora/code"     # the metric code lives in this repo
 sys.path.insert(0, str(DM))
 from eval_ge import KEYS, labeladh, metrics, touch_scale  # noqa: E402
 from panel_v3 import F_MAX, PANEL_VERSION, THR_REL, TOT_REL  # noqa: E402
 
-O = R / "outputs/R2S2V_mug/hf25"; DS = O / "dataset"; LG = R / "outputs/R2S2V_mug/lora_ge"; LT = R / "outputs/R2S2V_mug/lora_tactile"
+R = Path(os.environ.get("R2S2R") or ("/scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r" if Path("/scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r").exists() else "."))
+O = R / "outputs/R2S2V_mug/hf25"; DS = O / "dataset"; LG = R / "outputs/R2S2V_mug/lora_ge"; LT = R / "outputs/R2S2V_mug/lora_tactile"   # LG / LT: earlier runs' reference rows, used when present
 GROUP = {("heldout", "real"): "held-out twin, real frame 0 -> real touch", ("heldout", "sim"): "held-out twin, generated frame 0 -> sim touch",
          ("insample", "gen"): "training row (in-sample) -> its sim touch"}
 
@@ -44,7 +47,8 @@ def main():
                 res.append(dict(base, method=name, arm=arm, ckpt=int(ck), seed=seed, control=c["control"].get(arm), **metrics(np.load(f), T, S, T_N), **adh))
         res.append(dict(base, method="frame-0 touch repeated", seed=0, **metrics(np.repeat(T[:1], len(T), 0), T, S, T_N)))
         if c["kind"] == "heldout" and c["source"] == "real":
-            st = LG / "simtouch" / f"{c['clip']}.npz"
+            st = DS / "test" / "simtouch" / f"{c['clip']}.npz"                    # shipped with the dataset; else the cluster copy
+            st = st if st.exists() else LG / "simtouch" / f"{c['clip']}.npz"
             if st.exists():
                 sim = np.load(st)["sim"]; res.append(dict(base, method="twin sim touch (own scale)", seed=0, **metrics(sim / touch_scale(sim), T, S, T_N)))
             g = LG / "out" / "Gp8" / f"G_real_{ep8}_t_s0_tactile.npy"

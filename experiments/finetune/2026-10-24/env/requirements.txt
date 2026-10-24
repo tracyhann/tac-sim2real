@@ -1,0 +1,26 @@
+# Minimal pinned environment for the HF25 scripts (training, inference, scoring), Python 3.12. VideoX-Fun's own requirements.txt
+# is installed first by setup.sh; these pins fix the versions that matter. Full freeze of the reference machine: requirements-lock.txt.
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.8.0+cu128
+torchvision==0.23.0+cu128
+diffusers==0.35.1
+transformers==4.56.2
+accelerate==1.15.0
+peft==0.21.2
+safetensors==0.8.0
+einops==0.8.2
+omegaconf==2.4.0
+numpy==2.5.2
+scipy==1.18.1
+pillow==12.3.0
+av==19.0.2
+decord==0.6.0
+opencv-python-headless==5.0.0.93
+imageio==2.38.1
+imageio-ffmpeg
+tensorboard==2.21.0
+timm==1.0.30
+sentencepiece==0.2.2
+ftfy==6.3.1
+scikit-image==0.26.0
+huggingface_hub[cli]

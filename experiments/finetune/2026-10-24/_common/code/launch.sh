@@ -3,7 +3,8 @@
 #   bash launch.sh FHN_high FHN_low            training parts: one retry loop each, until done_exp_hf25_<part> exists
 #   bash launch.sh ev_FHN_500                  eval part: a waiter that starts its retry loop once BOTH experts have checkpoint-500
 # Loops: cfix_r2s2r_hf25_<part>; logs logs/hf25/{loop,wait}_<part>.log, pool step log logs/r2s2v/pool_cfix_r2s2r_hf25_<part>.log.
-R=/scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r; X=$R/experiments/R2S2V_mug; C=$R/experiments/finetune/2026-10-24/_common/code
+# ORIGINAL-CLUSTER ONLY (our GPU pool). Elsewhere run train.sh <part> directly (2026-10-24/README.md).
+R=/scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r; export R2S2R=$R; X=$R/experiments/R2S2V_mug; C=$R/experiments/finetune/2026-10-24/_common/code
 O=$R/outputs/R2S2V_mug/hf25; L=$R/logs/hf25; mkdir -p $L
 for p in "$@"; do
   case $p in FHN_high|FHN_low|SVO_high|SVO_low|CDS_high|CDS_low) ;; ev_FHN_[0-9]*|ev_SVO_[0-9]*|ev_CDS_[0-9]*) ;; *) echo "unknown part $p"; continue ;; esac

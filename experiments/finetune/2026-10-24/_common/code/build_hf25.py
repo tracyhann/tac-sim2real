@@ -1,4 +1,6 @@
-"""Dataset for the three HF25 video + touch LoRAs (user 2026-10-24; FHN / SVO / CDS). One set of 25 training pairs, three
+"""Dataset for the three HF25 video + touch LoRAs (user 2026-10-24; FHN / SVO / CDS). AUTHORS' BUILD SCRIPT: it reads the
+simulation renders (controls) of the original workspace; its output is published as the Hugging Face dataset
+tracyhan816/mug-video-touch-lora-hf25, which setup.sh downloads - nobody else needs to run this. One set of 25 training pairs, three
 metadata files that differ ONLY in the control video, so the control is the only difference between the arms.
 
 Rows = the 25 pairs of the public release (data/mug-sim2video-pose-tactile, fetch_hf.sh, commit 6cf129c): the zero-shot A14B

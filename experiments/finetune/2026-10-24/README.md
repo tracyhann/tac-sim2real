@@ -1,180 +1,141 @@
-# HF25 runbook · three video + touch LoRAs on Wan2.2-Fun-A14B-Control (FHN / SVO / CDS)
+# HF25 · three video + touch LoRAs on Wan2.2-Fun-A14B-Control (FHN / SVO / CDS)
 
-Everything needed to run the 2026-10-24 experiment: what it is, where the data and weights come from, how the training set is
-prepared, how to launch, monitor and evaluate. Written for someone who did not build it. Design details and history live in
-[_common/README.md](_common/README.md); per-arm notes in [FHN](FHN/README.md), [SVO](SVO/README.md), [CDS](CDS/README.md).
+Self-contained runbook. Everything the experiment needs is public: the backbone weights and the data are on Hugging Face,
+the trainer is VideoX-Fun at a pinned commit, the code is this folder. `setup.sh` fetches and installs all of it; `train.sh`
+trains; `train.sh ev_*` evaluates. Design notes: [_common/README.md](_common/README.md); per arm:
+[FHN](FHN/README.md), [SVO](SVO/README.md), [CDS](CDS/README.md).
 
-**Status (2026-10-24 06:30 CDT).** Code ready, dataset built and checked on Vision, trainer smoke-tested on a GPU (tiny model:
-train, checkpoint, resume, head save / load all pass). The real runs are NOT launched: start them with the commands in §5.
+**Status.** Code complete, training set built and checked, trainer smoke-tested end to end on a GPU (train, checkpoint, resume,
+touch-head save / load). The six training runs have not been started.
 
-## 1. The experiment in one paragraph
-Fine-tune Wan2.2-Fun-A14B-Control (a 14B video diffusion model with two experts, high / low noise) with LoRA so that, from a
-first frame + a control video + a text prompt, it generates a 5 s video of a hand carrying a mug AND the paired tactile reading
-of the TouchScale glove (880 sensors x 81 frames). The touch is a value array, never an image: a small head on the low-noise
-expert's last-layer tokens outputs it; it is trained together with the LoRA. Three arms are trained on the same 25 pairs with
-the same prompts, steps and settings; only the control video differs:
+## 1. The experiment
+Wan2.2-Fun-A14B-Control is a 14B video diffusion model (two experts: high noise, low noise). We fine-tune it with LoRA so
+that, from a first frame + a control video + a text prompt, it generates a 5 s video of a hand carrying a mug AND the paired
+reading of the TouchScale tactile glove: 880 sensors x 81 frames. The touch is a value array, never an image: a small head on
+the low-noise expert's last-layer tokens outputs it and is trained together with the LoRA (video flow-matching loss + touch
+regression loss). Three arms share the 25 training pairs, prompts, steps and settings; only the control video differs:
 
-| arm | control video |
-|---|---|
-| **FHN** | the control each video was generated from: static scene depth (inverse-depth grey) + the simulated hand / mug / coaster rendered on top (the F / H format) |
-| **SVO** | the simulation render only: hand / mug / coaster on black, no depth |
-| **CDS** | depth of a cube scene (static boxes, no body) + the simulation render on top |
+| arm | control video | what it tests |
+|---|---|---|
+| **FHN** | the control each video was generated from: static scene depth (inverse-depth grey) + the simulated hand / mug / coaster rendered on top | the format of our earlier runs, now with normalised touch and a value head |
+| **SVO** | the simulation render only: hand / mug / coaster on black, no depth | is the sim animation alone enough |
+| **CDS** | depth of a cube approximation of the scene (boxes, no body) + the simulation render | can crude scene geometry replace the real scan |
 
-Note: 19 of the 25 videos were generated from cube controls, so for those rows CDS = FHN; the arms differ on the 6 r6 rows and
-on the held-out test controls.
+19 of the 25 videos were generated from cube controls, so FHN = CDS on those rows; the arms differ on 6 rows and on the
+held-out test controls. Touch normalisation: per row, F / S with S = median total force over the frames in contact; the head's
+target is u = min(F / S, 0.11) / 0.11. Result = the full touch metric table on two held-out clips (§6, §7).
 
-## 2. Where everything is on the Vision cluster (nothing to download there)
-Workspace root `R = /scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r`.
+## 2. What you need (all public)
+| item | where | size |
+|---|---|---|
+| backbone weights | Hugging Face [alibaba-pai/Wan2.2-Fun-A14B-Control](https://huggingface.co/alibaba-pai/Wan2.2-Fun-A14B-Control) (Apache-2.0) | 65 GB |
+| trainer / pipeline | GitHub [aigc-apps/VideoX-Fun](https://github.com/aigc-apps/VideoX-Fun) at commit `13bb3c625e8b1e457d7124d92207b49e00e4a6fe` (Apache-2.0) | 50 MB |
+| **prepared training set + test cases** | Hugging Face [tracyhan816/mug-video-touch-lora-hf25](https://huggingface.co/datasets/tracyhan816/mug-video-touch-lora-hf25) (CC BY-NC 4.0) — videos, touch arrays, first frames, the three control sets, held-out cases | 64 MB |
+| raw public release (provenance only, not needed to train) | Hugging Face [tracyhan816/mug-sim2video-pose-tactile](https://huggingface.co/datasets/tracyhan816/mug-sim2video-pose-tactile), commit `6cf129c` — 25 videos + hand pose + touch | 42 MB |
+| this code | GitHub [tracyhann/tac-sim2real](https://github.com/tracyhann/tac-sim2real/tree/for-amir), branch `for-amir`, `experiments/finetune/2026-10-24/` | |
+| hardware | Linux, 1 NVIDIA GPU with ≥ 80 GB per training run (developed on H200 141 GB; smaller cards not measured), ~45 GB host RAM, ~75 GB disk, CUDA 12.8 driver | |
+| software | git, Python 3.12 (or [uv](https://github.com/astral-sh/uv)), ffmpeg libs come with the pip wheels | |
 
-| what | path |
-|---|---|
-| this experiment's code | `$R/experiments/finetune/2026-10-24/` (`_common/code/` = all scripts; `<ARM>/code/launch.sh` = one-line launchers) |
-| HF release (25 pairs, raw) | `$R/data/mug-sim2video-pose-tactile/` (42 MB; `REVISION` = the pinned commit) |
-| prepared training set | `$R/outputs/R2S2V_mug/hf25/dataset/` (65 MB) and its tarball `$R/outputs/R2S2V_mug/hf25/hf25_dataset_v2.tar.gz` (63 MB, md5 `35b0b5dac0a09c98f561d36229f36ab6`) |
-| backbone weights | `$R/models/Wan2.2-Fun-A14B-Control/` (65 GB) |
-| VideoX-Fun (trainer + pipeline) | `$R/third_party/VideoX-Fun/` (commit `13bb3c6`, shared trainer carries two local patches; our trainer copy `scripts/wan2.2_fun/train_control_lora_hf25.py` + `hf25_patch.py`) |
-| Python envs | `$R/envs/videoxfun/bin/python` (training / inference), `$R/envs/armA/bin/python` (data build / scoring) |
-| run outputs | `$R/outputs/R2S2V_mug/hf25/{<ARM>_high, <ARM>_low, out/, regr/, eval/}` |
-| logs | `$R/logs/hf25/` (loops, waiters, builds), `$R/logs/r2s2v/pool_cfix_r2s2r_hf25_<part>.log` (the GPU step's stdout) |
-| done markers | `$R/outputs/R2S2V_mug/done_exp_hf25_<part>` |
+Python environment: [env/requirements.txt](env/requirements.txt) (the pins that matter: torch 2.8.0+cu128, diffusers 0.35.1,
+transformers 4.56.2, accelerate 1.15.0, peft 0.21.2, ...) on top of VideoX-Fun's `requirements.txt`; the exact freeze of the
+reference machine is [env/requirements-lock.txt](env/requirements-lock.txt).
 
-The sim controls (`$R/outputs/B_sim2wm/sim/tsmug-*/views*/{fun_ctrl.mp4, sim.mp4}`) are the only input that exists nowhere
-else; the prepared dataset / tarball already contains the resized copies the training needs.
-
-## 3. Setting up elsewhere (fresh machine, 1 x 80 GB+ GPU per training part)
-Recreate the layout under a root of your choice and export `R2S2R=<root>` (train.sh reads it; the eval scripts are Vision-only,
-see §6). Steps:
-
-1. **Backbone weights (65 GB).** Hugging Face repo `alibaba-pai/Wan2.2-Fun-A14B-Control` (Apache-2.0):
-   ```bash
-   hf download alibaba-pai/Wan2.2-Fun-A14B-Control --local-dir $R2S2R/models/Wan2.2-Fun-A14B-Control
-   ```
-   Expected layout: `high_noise_model/` (27 GB, `config.json` + `diffusion_pytorch_model.safetensors`), `low_noise_model/` (27 GB),
-   `models_t5_umt5-xxl-enc-bf16.pth` (11 GB), `Wan2.1_VAE.pth` (485 MB), `google/` (the umt5 tokenizer, 21 MB).
-2. **VideoX-Fun + environment.**
-   ```bash
-   git clone https://github.com/aigc-apps/VideoX-Fun.git $R2S2R/third_party/VideoX-Fun
-   git -C $R2S2R/third_party/VideoX-Fun checkout 13bb3c625e8b1e457d7124d92207b49e00e4a6fe
-   uv venv --python 3.12 $R2S2R/envs/videoxfun && source $R2S2R/envs/videoxfun/bin/activate
-   pip install -r $R2S2R/third_party/VideoX-Fun/requirements.txt
-   pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cu128   # if requirements picked another build
-   pip install peft==0.21.2 tensorboard av decord opencv-python-headless           # the trainer imports tensorboard; peft >= 0.21 for inject_adapter_in_model
-   ```
-   Versions in use on Vision: Python 3.12.12, torch 2.8.0+cu128, peft 0.21.2, diffusers 0.35.1, accelerate 1.15.0,
-   transformers 4.56.2, av 19, decord 0.6, opencv 5.0, einops 0.8.2, omegaconf 2.4.
-3. **Trainer patches (in this order; each is idempotent and asserts its anchors).** The shared VideoX-Fun trainer needs two opt-in
-   flags we rely on (`--inpaint_first_frame_only`: the inpaint mask keeps only frame 0, as at inference; `--resume_lora_weights`:
-   resume from `checkpoint-N.safetensors` without accelerate state dirs), then our copy with the touch head is generated:
-   ```bash
-   C=$R2S2R/experiments/finetune/2026-10-24/_common/code; V=$R2S2R/third_party/VideoX-Fun
-   python $C/videoxfun_patches/patch_trainer.py  $V/scripts/wan2.2_fun/train_control_lora.py
-   python $C/videoxfun_patches/patch_trainer2.py $V/scripts/wan2.2_fun/train_control_lora.py
-   python $C/make_trainer_hf25.py $V      # -> scripts/wan2.2_fun/train_control_lora_hf25.py + hf25_patch.py (train.sh also does this if missing)
-   ```
-4. **Data.** Public release (CC BY-NC 4.0) `tracyhan816/mug-sim2video-pose-tactile`, pinned commit `6cf129c` — 25 folders, each
-   `video.mp4` (832 x 480, 81 frames, 16 fps, a zero-shot Wan2.2-Fun generation of a counterfactual replay of clip edf79415),
-   `tactile.npz` (`normal_N` (81, 880): the left glove's simulated normal force per sensor at the video frames, `t_video`,
-   `sim_covered`), `hand_pose.npz`, plus `metadata.csv` (camera, first frame, perturbation per video):
-   ```bash
-   bash $C/fetch_hf.sh        # -> $R2S2R/data/mug-sim2video-pose-tactile (42 MB); download the whole repo, --include dropped files once
-   ```
-5. **Prepared training set.** Either copy the tarball from Vision (recommended: it has the controls) and extract it:
-   ```bash
-   mkdir -p $R2S2R/outputs/R2S2V_mug/hf25 && tar -xzf hf25_dataset_v2.tar.gz -C $R2S2R/outputs/R2S2V_mug/hf25   # -> hf25/dataset/
-   ```
-   or rebuild it with `build_hf25.py` (§4) — that needs the sim controls, i.e. the Vision tree.
-
-## 4. The training set and how it is prepared (`_common/code/build_hf25.py`)
-Run on Vision (armA env, CPU, ~10 min; stops on any failed check):
+## 3. Setup (one command)
+Pick a root directory `R2S2R` for weights, VideoX-Fun, the env and outputs (the code can live anywhere; it finds itself):
 ```bash
-cd $R/experiments/finetune/2026-10-24/_common/code && rm -rf $R/outputs/R2S2V_mug/hf25/dataset && $R/envs/armA/bin/python build_hf25.py
+git clone -b for-amir https://github.com/tracyhann/tac-sim2real.git
+export R2S2R=/data/hf25                           # any writable path with ~75 GB free
+bash tac-sim2real/experiments/finetune/2026-10-24/setup.sh         # add --no-weights to skip the 65 GB download, --raw-release to also fetch the raw release
 ```
-What it does per HF row (`release_cases.json` maps each HF id to the Vision generation it came from and its control):
-- copies `video.mp4` as is (verified frame-by-frame against the Vision generation, MAE 0.0), writes `start/<id>.png` (frame 0);
-- touch -> `tactile/<id>.npz`: `touch` (N), `S` (= median total force over the frames with total > 1 N of that replay; the
-  normalisation), `touch_rel = touch / S`, `u = min(touch_rel, 0.11) / 0.11` (the head's target in [0, 1]), `t`, `sim_covered`;
-- the three controls, resized 854 x 480 -> 832 x 480: `ctrl/<clip>_<views>_<view>_fun.mp4` (depth + sim render) and `..._sim.mp4`
-  (sim render only); the 6 r6 rows take the views9 cube renders of the same replay (same head camera) for SVO / CDS;
-- prompt from `prompts.py`: one shared action sentence + a visual-feature sentence where the video has one (water in the mug,
-  claw grip, rim pinch, shaken, very fast) + the touch sentence; 9 rows get the shared prompt alone.
-Outputs: `metadata_FHN.json` / `metadata_SVO.json` / `metadata_CDS.json` (identical rows except `control_file_path`; the trainer
-reads `file_path`, `control_file_path`, `text`, `tactile`), `rows.json`, `test_cases.json` (4 held-out twin cases + 3 in-sample
-rows with per-arm controls; starts / touch under `test/`), `check.json` (per-row checks + summary). Checks: 81 frames at 16 fps for
-every stream, touch times = video times, finite touch, the r6 -> views9 swap shows the same replay, SVO controls mostly black.
-Current summary: 25/25 ok, S 11-42 N, 4 % of sensor readings active, the cap clips at most 2.8 % of a row's active readings.
+`setup.sh` is idempotent and does, in order: clone VideoX-Fun at the pinned commit; create `$R2S2R/envs/videoxfun` (Python 3.12)
+and install VideoX-Fun's requirements + `env/requirements.txt`; `hf download` the weights to `$R2S2R/models/Wan2.2-Fun-A14B-Control`
+and the training set to `$R2S2R/outputs/R2S2V_mug/hf25/dataset`; apply the two trainer patches
+(`_common/code/videoxfun_patches/`: `--inpaint_first_frame_only`, `--resume_lora_weights`) and generate our trainer copy
+`scripts/wan2.2_fun/train_control_lora_hf25.py` + `hf25_patch.py`; run the CPU unit test of the touch head. Layout it creates:
+```
+$R2S2R/
+  third_party/VideoX-Fun/                 pinned checkout + patched trainer copy
+  envs/videoxfun/                         the Python env ($R2S2R/envs/videoxfun/bin/python)
+  models/Wan2.2-Fun-A14B-Control/         high_noise_model/ low_noise_model/ Wan2.1_VAE.pth models_t5_umt5-xxl-enc-bf16.pth google/
+  outputs/R2S2V_mug/hf25/dataset/         the training set (see the dataset card for every file and format)
+  outputs/R2S2V_mug/hf25/<ARM>_{high,low}/   training outputs (created by train.sh)
+  cache/huggingface/                      HF cache
+```
+Manual equivalent: the steps above one by one; the scripts only need `R2S2R` exported (`PY=<python>` overrides the env path).
+
+## 4. The data
+Use the prepared training set as is; `setup.sh` downloads it. Its card lists every file and format. In short: 25 rows, each a
+released video (832 x 480, 81 frames, 16 fps) + its first frame + a touch npz (`touch` N, `S`, `touch_rel`, `u`, `t`) + three control
+videos; `metadata_<ARM>.json` are the three training manifests (identical except `control_file_path`); `test_cases.json` + `test/`
+hold the 7 evaluation cases (4 held-out, from two real clips the training never sees, + 3 in-sample rows) with starts, touch and
+a control per arm. Prompts come from `_common/code/prompts.py` (one shared action sentence + a visual-feature sentence where the
+video shows one). `_common/code/build_hf25.py` is the script that produced the set from the raw release and our simulation
+renders; it is included for provenance and needs the authors' simulation outputs, so you do not run it.
 
 ## 5. Training
-**Settings** (`_common/code/train.sh`, identical to the earlier F / H runs except the touch head and normalisation): LoRA rank 64 /
-alpha 32 on q, k, v, ffn.0, ffn.2 of both experts, lr 1e-4 constant, batch 1, 81 frames at 480 x 832, first-frame-only inpaint
-mask, control_ref + first_frame, reference image in self-attention, 10 % control dropout (trainer default), 500 steps per expert
-(= 20 passes over the 25 rows), checkpoint every 25 steps (multiples of 100 kept + the newest). The LOW-noise expert also trains
-the touch head (`--tactile_head --tactile_lambda 1.0`: loss = video flow matching + 1.0 x R1 touch loss; head in fp32, LoRA in
-bf16; saved as `tactile_head-<step>.pt` beside each `checkpoint-<step>.safetensors`). The high-noise expert is a plain video LoRA.
-Parts: `FHN_high FHN_low SVO_high SVO_low CDS_high CDS_low` (one GPU each, ~45 s/step on an H200 -> ~6.5 h of compute each),
-then `ev_FHN_500 ev_SVO_500 ev_CDS_500` (one GPU, ~1 h each).
+Settings (`_common/code/train.sh`): LoRA rank 64 / alpha 32 on q, k, v, ffn.0, ffn.2 of both experts, lr 1e-4 constant, batch 1,
+81 frames at 480 x 832, first-frame-only inpaint mask (frame 0 known), control_ref + first_frame, reference image in self-attention,
+500 steps per expert (= 20 passes over the 25 rows), checkpoint every 25 steps (multiples of 100 kept + the newest). The LOW-noise
+expert also trains the touch head (`--tactile_head --tactile_lambda 1.0`; head in fp32, LoRA in bf16; saved as
+`tactile_head-<step>.pt` beside each `checkpoint-<step>.safetensors`). The high-noise expert is a plain video LoRA.
 
-**On Vision (pool cards, the intended way).** Each arm's launcher starts one retry loop per expert and a waiter that starts the
-evaluation once both experts have step 500:
+Six independent parts, one GPU each (~45 s/step on an H200 → ~6.5 h each; run in parallel on separate GPUs):
 ```bash
-bash /scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r/experiments/finetune/2026-10-24/FHN/code/launch.sh
-bash /scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r/experiments/finetune/2026-10-24/SVO/code/launch.sh
-bash /scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r/experiments/finetune/2026-10-24/CDS/code/launch.sh
+export R2S2R=/data/hf25
+C=tac-sim2real/experiments/finetune/2026-10-24/_common/code
+bash $C/train.sh FHN_high      # likewise FHN_low  SVO_high  SVO_low  CDS_high  CDS_low
 ```
-Run them on the login node (`ssh vision`); they return at once. Pool steps run inside 4 h allocations and can be preempted, so
-every training part is EXPECTED to be killed at least once (6.5 h > 4 h): `pool_retry.sh` relaunches it and the trainer resumes
-from the newest checkpoint + head with a fresh Adam (as F / H did). Each kill costs < 25 steps + ~10 min of model loading;
-expect 8-9 h wall-clock per expert, more when the pool is busy. The card cap (`$R/experiments/R2S2V_mug/pool_cap`, 8) counts all
-`cfix_r2s2r` steps of the user, so keep other pool work in mind: the 6 training parts fit, the 3 eval parts queue behind them.
+Exit code 0 = finished (`checkpoint-500.safetensors`, + `tactile_head-500.pt` for `_low`). Exit code 1 = not finished: run the same
+command again and it resumes from the newest checkpoint (fresh optimizer state, constant LR), so it is safe to run under any
+scheduler that kills jobs — each kill costs at most 25 steps + ~10 min of model loading. Exit code 2 = `R2S2R` not set. Progress
+is in the console (`Steps: 12%|...| 60/500 [..] step_loss=.. tactile=..`; `tactile` is the touch loss, nan for `_high`) and as files
+in `$R2S2R/outputs/R2S2V_mug/hf25/<ARM>_<expert>/`. Logs: redirect the console yourself (`... > logs/FHN_high.log 2>&1`).
+GPU memory: ~45 GB; host RAM ~45 GB (the weights load straight to the GPU).
 
-**Elsewhere (one GPU, no pool).** With the layout of §3 and `R2S2R` exported:
+## 6. Evaluation (per arm, one GPU, ~1 h)
 ```bash
-bash $R2S2R/experiments/finetune/2026-10-24/_common/code/train.sh FHN_low     # exit 0 = checkpoint-500 (+ head) written; exit 1 = not finished: run it again, it resumes
+bash $C/train.sh ev_FHN_500     # needs FHN_high and FHN_low at step 500; likewise ev_SVO_500, ev_CDS_500
 ```
-Repeat per part (6 parts, any order, in parallel on separate GPUs). Ran on H200 141 GB cards with 44 GB of host RAM (the pool
-request); the memory need on smaller GPUs was not measured.
+It runs:
+1. `predict_hf25.py` — both experts' LoRAs merged into the pipeline + the low expert's head; for each test case it generates the
+   video (CFG 6, start frame as reference image, 50 steps, seed 0) and reads the touch from the head at the last denoising step →
+   `$R2S2R/outputs/R2S2V_mug/hf25/out/<ARM>c500/<case>_s0.{mp4, _tactile.npy (81 x 880, relative F / S), json}`.
+2. `score_hf25.py` — the full touch metric set on every evaluated arm vs the ground truth of each case (contact F1 at 6 mm / pad /
+   sensor, pad-time F1, time IoU, onset / release error, total and per-finger force correlation, load-share error, relative and
+   oracle-newton MAE), next to the baselines that need no extra data: "frame-0 touch repeated" and "twin sim touch" →
+   `$R2S2R/outputs/R2S2V_mug/hf25/eval/{table.md, scores.json}`. CPU, seconds; rerun any time (`python $C/score_hf25.py`).
 
-**Monitoring.**
-```bash
-tail -f $R/logs/r2s2v/pool_cfix_r2s2r_hf25_FHN_low.log      # the step's stdout: "Steps: 12%|..| 60/500 [...] step_loss=.., tactile=.."
-ls -la $R/outputs/R2S2V_mug/hf25/FHN_low/                   # checkpoint-N.safetensors + tactile_head-N.pt (low) every 25 steps
-tail -3 $R/logs/hf25/loop_FHN_low.log                        # the retry loop: "run ... on <job> <node>" / "done ... rc N"
-ls $R/outputs/R2S2V_mug/done_exp_hf25_*                      # finished parts
-pgrep -af "pool_retry.sh cfix_r2s2r_hf25"                    # live loops
-```
-A loop that gives up writes `done_exp_hf25_<part>.gaveup` with the reason (a missing script, rc 126 / 127). A step that exits
-rc 1 right after start: read the step log (the trainer's traceback is there), fix, and relaunch the same `launch.sh` (it skips
-parts that are done or already looping).
-
-**Smoke test (optional, 1 card, ~3 min).** `bash $R/experiments/finetune/2026-10-24/_common/code/launch_smoke.sh` trains a
-tiny stand-in model for 3 steps, resumes to 4 and checks the head files; passed on 2026-10-24.
-
-## 6. Evaluation (`ev_<ARM>_500`, started by the launcher's waiter; or `bash _common/code/launch.sh ev_FHN_500`)
-1. `predict_hf25.py`: both experts' step-500 LoRAs merged into the pipeline + the low expert's head; for each test case
-   (`dataset/test_cases.json`: twins 55494490 / 4397541c from the real frame 0 + its touch and from the zero-shot generated frame 0
-   + sim touch; 3 training rows) generates the video (CFG 6, start frame as reference image, 50 steps, seed 0) and reads the
-   touch from the head at the last denoising step -> `out/<ARM>c500/<case>_s0.{mp4, _tactile.npy (81 x 880, F / S units), json}`.
-2. `regr_hf25.py`: the reference "video + separate estimator": an R6 regressor (frozen Wan VAE latents -> touch) trained on the
-   same 25 pairs, applied to the arm's generated videos -> `out/<ARM>c500_regr/`.
-3. `labeladh.py` (Vision tree): mug / hand IoU of the held-out videos vs the simulation silhouettes (SAM3).
-4. `score_hf25.py` -> `eval/table.md` + `eval/scores.json`: the full held-out metric set (contact F1 @ 6 mm / pad / taxel,
-   pad-time F1, time IoU, onset / release error, total and finger force correlation, load-share TV, relative and oracle-N MAE)
-   for every arm, next to the reference rows (R6 regressor, frame-0 touch repeated, the twin's own sim touch, dual-mode G epoch 8,
-   the earlier h2 LoRA, zero-shot / real video IoU). The score script runs on CPU in seconds and can be rerun any time.
-
-Steps 1-4 import code and models from the Vision tree (`experiments/R2S2V_mug/fun_zeroshot.py`, the dual-mode metrics,
-SAM3, the simulation masks), so run the evaluation on Vision. Trained LoRAs from another machine can be copied into
-`$R/outputs/R2S2V_mug/hf25/<ARM>_{high,low}/` and evaluated there.
+Two optional reference rows run only on the authors' cluster and are skipped automatically elsewhere (the table simply lacks
+them): an external R6 touch regressor on the generated videos (needs the glove geometry file) and mug / hand IoU of the generated
+videos vs the simulation (needs SAM3 + the simulation masks). Trained LoRAs can be sent back for those.
 
 ## 7. Reading the result
-`eval/table.md`: one row per (case group, method). Compare the three arms' "own touch head" rows with each other and with the
-"R6 regressor on the ... video" rows (does the backbone's head beat an external estimator on its own video?) and the baselines.
-Held-out groups are the ones that matter; the in-sample group only shows whether an arm fitted its data. Caveats to carry into
-any write-up: all 25 training pairs are replays of ONE real clip (edf79415), the test set is two twins, FHN and CDS share 19 of 25
-controls, the twins' real touch is absolute glove data normalised by its own episode scale.
+`eval/table.md`: one row per (case group, method). The held-out groups decide; the in-sample group only shows whether an arm
+fitted its data. Compare the arms' "own touch head" rows with each other and with the baselines (a method that does not beat
+"frame-0 touch repeated" on contact F1 or "twin sim touch" on total-force correlation has not learned the touch). Caveats for any
+write-up: all 25 training pairs are replays of ONE real clip; the test set is two clips; FHN and CDS share 19 of 25 controls; the
+held-out real touch is absolute glove data normalised by its own episode scale.
 
-## 8. Checklist for the helper (Vision)
-1. `ssh vision`; check the pool is not full: `ps -u $USER -o args | grep -c "[p]ool_run.py --name cfix_r2s2r"` (< 8).
-2. `ls $R/outputs/R2S2V_mug/hf25/dataset/metadata_*.json` exists (else §4).
-3. Run the three `launch.sh` commands of §5.
-4. Over the next ~10 h: the monitoring commands of §5; relaunch after a `.gaveup`, never start a second loop by hand.
-5. When `done_exp_hf25_ev_<ARM>_500` exists for all three: `cat $R/outputs/R2S2V_mug/hf25/eval/table.md`.
+## 8. For an agent: the whole thing as commands
+```bash
+git clone -b for-amir https://github.com/tracyhann/tac-sim2real.git && cd tac-sim2real/experiments/finetune/2026-10-24
+export R2S2R=/data/hf25 && bash setup.sh                                   # ~1 h, dominated by the 65 GB download
+for p in FHN_high FHN_low SVO_high SVO_low CDS_high CDS_low; do             # 6 GPUs in parallel, or sequentially; rerun a part until exit 0
+  until bash _common/code/train.sh $p; do sleep 30; done
+done
+for a in FHN SVO CDS; do bash _common/code/train.sh ev_${a}_500; done
+cat $R2S2R/outputs/R2S2V_mug/hf25/eval/table.md
+```
+Do not edit VideoX-Fun beyond the two patches; do not change the trainer flags (the arms must stay identical except the control);
+report the table and the per-case `out/<ARM>c500/*.json`.
+
+## 9. Troubleshooting
+- `set R2S2R=...`: export the root (every script needs it).
+- `resume_lora_weights: ... tactile_head-N.pt missing`: a kill landed between the two saves; `train.sh` deletes such a checkpoint
+  on the next start and resumes from the previous pair.
+- `expected scalar type Float but found BFloat16` or a shape assert in `hf25_patch.py`: the trainer copy is stale — rerun
+  `python _common/code/make_trainer_hf25.py $R2S2R/third_party/VideoX-Fun`.
+- The trainer imports `tensorboard`, `decord`, `av`; `setup.sh` installs them. CUDA OOM on < 80 GB cards: not supported as configured.
+- Smoke test without the full model (`_common/code/smoke_tiny.sh`) uses a tiny stand-in network built by
+  `../2026-10-22/dual_mode_lora/code/make_tiny.py` from the real VAE / T5; adapt its paths if you want it elsewhere.
+- Authors' cluster specifics (job pool, log locations, launchers): [_common/CLUSTER.md](_common/CLUSTER.md).

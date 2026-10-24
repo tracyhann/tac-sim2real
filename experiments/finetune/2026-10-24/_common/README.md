@@ -10,7 +10,8 @@ runs them (downloads, layout, dataset build, launch, monitoring, eval): [../READ
 ## Common setup (user 2026-10-24)
 - **Model.** Wan2.2-Fun-A14B-Control, LoRA on both experts (high / low noise), as the F / H runs.
 - **Data.** The 25 pairs of the public release https://huggingface.co/datasets/tracyhan816/mug-sim2video-pose-tactile
-  (commit 6cf129c; `fetch_hf.sh` -> Vision `data/mug-sim2video-pose-tactile/`): zero-shot A14B video (832 x 480, 81 frames)
+  (commit 6cf129c; `fetch_hf.sh` -> `$R2S2R/data/mug-sim2video-pose-tactile/`; the prepared set is on Hugging Face as
+  [tracyhan816/mug-video-touch-lora-hf25](https://huggingface.co/datasets/tracyhan816/mug-video-touch-lora-hf25)): zero-shot A14B video (832 x 480, 81 frames)
   of a counterfactual replay of clip edf79415 + that replay's simulated touch of the left glove (880 channels per frame).
   Groups: r6 head (6), r8b head + top photo (12), r10 user frames (7). Variants: recorded, grip 30 %, friction x0.5,
   +300 g water, 10x fast, +-60 mm shake, claw, rim pinch.
@@ -45,7 +46,7 @@ and on the held-out twins' control.
 ## Evaluation (`predict_hf25.py`, `regr_hf25.py`, `score_hf25.py`; part `ev_<ARM>_500`)
 - Held-out: twins 55494490 / 4397541c (never in any HF25 row), head view; start = real frame 0 + its touch (target real touch,
   relative to the episode S) and start = zero-shot generated frame 0 + sim touch (target sim touch). Controls in each arm's
-  own format: FHN views5/head (twin depth + sim), SVO / CDS views9_recorded/head (built by `mac/twin_cubes.sh`, 10-24).
+  own format: FHN = fused-scan depth + sim, SVO / CDS = cube-scene renders (built by `mac/twin_cubes.sh`, 10-24); all in the dataset's `test/`.
 - In-sample: 3 training rows (r6_head_recorded, r8b_topphoto_shake60mm, r10_closeup_rimpinch).
 - Generation = dual-mode G protocol: CFG 6, start frame as reference image, 50 steps, seed 0; touch from the head at the last step.
 - Metrics = `dual_mode_lora/code/eval_ge.metrics` (full set) + mug / hand IoU vs sim (labeladh.py). Reference rows: R6 regressor
@@ -56,10 +57,10 @@ and on the held-out twins' control.
 Runbook for whoever runs it: [../README.md](../README.md) (downloads, layout, dataset build, launch, monitoring, eval).
 `fetch_hf.sh` · `build_hf25.py` (+ checks -> dataset/check.json) · `prompts.py` · `hf25_patch.py` (head, loss, dataset) ·
 `make_trainer_hf25.py` (-> VideoX-Fun `train_control_lora_hf25.py`) · `train.sh` (parts) · `launch.sh` (pool loops, eval waiter) ·
-`predict_hf25.py` · `regr_hf25.py` · `score_hf25.py` · `videoxfun_patches/` (the two shared-trainer patches a fresh VideoX-Fun needs first) · `smoke_tiny.sh` / `launch_smoke.sh`
+`predict_hf25.py` · `regr_hf25.py` · `score_hf25.py` · `videoxfun_patches/` (the two VideoX-Fun trainer patches) · `wan_pipe.py` (portable pipeline loader) · `../setup.sh` + `../env/` · `smoke_tiny.sh` / `launch_smoke.sh`
 (tiny-model trainer test, one card, ~3 min; PASSED 10-24 after a dtype fix) · `release_cases.json` · `mac/twin_cubes.sh`.
-Outputs: Vision `outputs/R2S2V_mug/hf25/{dataset, <ARM>_high, <ARM>_low, out/<ARM>c<CK>[_regr], regr, eval}`; logs `logs/hf25/`.
+Outputs: `$R2S2R/outputs/R2S2V_mug/hf25/{dataset, <ARM>_high, <ARM>_low, out/<ARM>c<CK>[_regr], regr, eval}`. Cluster notes: [CLUSTER.md](CLUSTER.md).
 
 ## History
-- 10-24 v1 drew the touch as a pixel panel on the video canvas (copied from F / H); rejected by the user ("touch is values, not
+- 10-24 the first version drew the touch as a pixel panel on the video canvas (copied from F / H); rejected by the user ("touch is values, not
   a video / RGB problem") after the dataset had been built. v2 = this value head; the panel dataset was deleted and rebuilt.

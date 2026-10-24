@@ -1,4 +1,4 @@
-"""Generate video + touch with one HF25 arm (train.sh part ev_<ARM>_<CK>): both experts' LoRAs at step CK merged into
+"""Generate video + touch with one HF25 arm (train.sh part ev_<ARM>_<CK>; root = env R2S2R, see 2026-10-24/README.md): both experts' LoRAs at step CK merged into
 Wan2.2-Fun-A14B-Control, the low-noise expert's touch head (tactile_head-CK.pt, hf25_patch.TactileHead) on top, every case of
 dataset/test_cases.json that has a control in this arm's format.
 Job = the training job: frame 0 known, frames 1-80 generated, control = the arm's control. Settings = the dual-mode G protocol
@@ -19,12 +19,12 @@ import cv2
 import numpy as np
 import torch
 
-R = Path("/scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r"); X = R / "experiments/R2S2V_mug"; HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(X)); sys.path.insert(1, str(HERE))
-from fun_zeroshot import GEN_DIR, WAN_NEGATIVE, load_pipe, write_video  # noqa: E402
+HERE = Path(__file__).resolve().parent; sys.path.insert(0, str(HERE))
+from wan_pipe import ROOT as R, WAN_NEGATIVE, load_pipe, write_video  # noqa: E402  (root = env R2S2R)
 from hf25_patch import TactileHead, attach_capture, rel_from_u, video_tokens  # noqa: E402
 
-O = R / "outputs/R2S2V_mug/hf25"; DS = O / "dataset"; H, W, N = 480, 832, 81; HW = (H // 16) * (W // 16); F_LAT = (N - 1) // 4 + 1
+O = R / "outputs/R2S2V_mug/hf25"; DS = O / "dataset"; GEN_DIR = R / "outputs/A_baseline/gen"      # gen/: the video half for the (cluster-only) mug / hand IoU scorer
+H, W, N = 480, 832, 81; HW = (H // 16) * (W // 16); F_LAT = (N - 1) // 4 + 1
 
 
 def main():
@@ -42,7 +42,7 @@ def main():
     print(tag, len(todo), "cases to run", flush=True)
     if not todo:
         return
-    pipe, vae, sch, boundary = load_pipe("a14b")
+    pipe, vae, sch, boundary = load_pipe("a14b")                                          # also puts VideoX-Fun on sys.path
     from videox_fun.utils import get_image_latent, get_video_to_video_latent, merge_lora
     pipe = merge_lora(pipe, str(lo), 1.0, device="cuda", dtype=torch.bfloat16)                       # transformer = low-noise expert
     pipe = merge_lora(pipe, str(hi), 1.0, device="cuda", dtype=torch.bfloat16, sub_transformer_name="transformer_2")

@@ -14,12 +14,14 @@
 #                            for low); checkpoints that are not multiples of 100 are pruned once a newer one exists
 #   ev_<ARM>_<CK>            predict_hf25.py (video + touch for test_cases.json), regr_hf25.py (external R6 estimator on the
 #                            generated videos), labeladh.py (mug / hand IoU vs sim), score_hf25.py (every arm / checkpoint)
-R=${R2S2R:-/scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r}   # workspace root (see 2026-10-24/README.md for the layout); override R2S2R / PY / PA elsewhere
-X=$R/experiments/R2S2V_mug; C=$R/experiments/finetune/2026-10-24/_common/code
-O=$R/outputs/R2S2V_mug/hf25; DS=$O/dataset; V=$R/third_party/VideoX-Fun; PY=${PY:-$R/envs/videoxfun/bin/python}; PA=${PA:-$R/envs/armA/bin/python}
-export HF_HOME=$R/cache/huggingface TOKENIZERS_PARALLELISM=false; unset HF_TOKEN
+C=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)                      # this folder (the git checkout); the data / weights root is R2S2R
+R=${R2S2R:-}; [ -z "$R" ] && [ -d /scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r ] && R=/scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r
+[ -n "$R" ] || { echo "set R2S2R=<root holding models/ third_party/ outputs/> (see 2026-10-24/README.md)"; exit 2; }
+export R2S2R=$R; X=$R/experiments/R2S2V_mug
+O=$R/outputs/R2S2V_mug/hf25; DS=$O/dataset; V=$R/third_party/VideoX-Fun; PY=${PY:-$R/envs/videoxfun/bin/python}; PA=${PA:-$PY}
+export HF_HOME=${HF_HOME:-$R/cache/huggingface} TOKENIZERS_PARALLELISM=false; unset HF_TOKEN
 STEPS=500; part=$1
-echo "host $(hostname) gpu $(nvidia-smi --query-gpu=name --format=csv,noheader) $(date +%T) part $part"
+echo "host $(hostname) gpu $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1) $(date +%T) part $part root $R"
 case $part in
   FHN_high|FHN_low|SVO_high|SVO_low|CDS_high|CDS_low)
     ARM=${part%_*}; B=${part#*_}; OUT=$O/${ARM}_$B; mkdir -p $OUT
@@ -51,9 +53,9 @@ case $part in
     ARM=$(echo $part | cut -d_ -f2); CK=$(echo $part | cut -d_ -f3); arm=$(echo $ARM | tr A-Z a-z)
     for B in low high; do [ -f $O/${ARM}_$B/checkpoint-$CK.safetensors ] || { echo "no ${ARM}_$B checkpoint-$CK"; exit 1; }; done
     [ -f $O/${ARM}_low/tactile_head-$CK.pt ] || { echo "no ${ARM}_low tactile_head-$CK.pt"; exit 1; }
-    cd $X && $PY $C/predict_hf25.py --arm $ARM --ckpt $CK || exit 1
-    $PY $C/regr_hf25.py --arm $ARM --ckpt $CK || exit 1
-    bash $X/run_r2s.sh labeladh.py --clips tsmug-55494490 tsmug-4397541c --models wan22fun-a14b-hf25${arm}c$CK-real wan22fun-a14b-hf25${arm}c$CK-sim
+    $PY $C/predict_hf25.py --arm $ARM --ckpt $CK || exit 1
+    if [ -f $R/data/TouchScale/metadata/glove_geometry_left.json ]; then $PY $C/regr_hf25.py --arm $ARM --ckpt $CK || exit 1; else echo "regr_hf25 skipped (no glove geometry here)"; fi
+    if [ -f $X/labeladh.py ]; then (cd $X && bash run_r2s.sh labeladh.py --clips tsmug-55494490 tsmug-4397541c --models wan22fun-a14b-hf25${arm}c$CK-real wan22fun-a14b-hf25${arm}c$CK-sim); else echo "labeladh (mug / hand IoU vs sim, SAM3) skipped: original cluster only"; fi
     $PA $C/score_hf25.py ;;
   *) echo "unknown part $part"; exit 2 ;;
 esac
