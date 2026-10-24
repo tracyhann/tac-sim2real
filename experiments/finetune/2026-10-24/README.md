@@ -34,7 +34,7 @@ target is u = min(F / S, 0.11) / 0.11. Result = the full touch metric table on t
 | **prepared training set + test cases** | Hugging Face [tracyhan816/mug-video-touch-lora-hf25](https://huggingface.co/datasets/tracyhan816/mug-video-touch-lora-hf25) (CC BY-NC 4.0) — videos, touch arrays, first frames, the three control sets, held-out cases | 64 MB |
 | raw public release (provenance only, not needed to train) | Hugging Face [tracyhan816/mug-sim2video-pose-tactile](https://huggingface.co/datasets/tracyhan816/mug-sim2video-pose-tactile), commit `6cf129c` — 25 videos + hand pose + touch | 42 MB |
 | this code | GitHub [tracyhann/tac-sim2real](https://github.com/tracyhann/tac-sim2real/tree/for-amir), branch `for-amir`, `experiments/finetune/2026-10-24/` | |
-| hardware | Linux, 1 NVIDIA GPU with ≥ 80 GB per training run (developed on H200 141 GB; smaller cards not measured), ~45 GB host RAM, ~75 GB disk, CUDA 12.8 driver | |
+| hardware | Linux, 1 NVIDIA GPU per training run — developed and tested on H200 141 GB only (see §5 / §6 for what is known about 80 GB cards), bf16 support (A100 / H100 class), ~45 GB host RAM, ~85 GB disk, CUDA 12.8 driver | |
 | software | git, Python 3.12 (or [uv](https://github.com/astral-sh/uv)), ffmpeg libs come with the pip wheels | |
 
 Python environment: [env/requirements.txt](env/requirements.txt) (the pins that matter: torch 2.8.0+cu128, diffusers 0.35.1,
@@ -45,7 +45,7 @@ reference machine is [env/requirements-lock.txt](env/requirements-lock.txt).
 Pick a root directory `R2S2R` for weights, VideoX-Fun, the env and outputs (the code can live anywhere; it finds itself):
 ```bash
 git clone -b for-amir https://github.com/tracyhann/tac-sim2real.git
-export R2S2R=/data/hf25                           # any writable path with ~75 GB free
+export R2S2R=/data/hf25                           # any writable path with ~85 GB free
 bash tac-sim2real/experiments/finetune/2026-10-24/setup.sh         # add --no-weights to skip the 69 GB download, --raw-release to also fetch the raw release
 ```
 `setup.sh` is idempotent and does, in order: clone VideoX-Fun at the pinned commit; create `$R2S2R/envs/videoxfun` (Python 3.12)
@@ -91,7 +91,9 @@ command again and it resumes from the newest checkpoint (fresh optimizer state, 
 scheduler that kills jobs — each kill costs at most 25 steps + ~10 min of model loading. Exit code 2 = `R2S2R` not set. Progress
 is in the console (`Steps: 12%|...| 60/500 [..] step_loss=.. tactile=..`; `tactile` is the touch loss, nan for `_high`) and as files
 in `$R2S2R/outputs/R2S2V_mug/hf25/<ARM>_<expert>/`. Logs: redirect the console yourself (`... > logs/FHN_high.log 2>&1`).
-GPU memory: ~45 GB; host RAM ~45 GB (the weights load straight to the GPU).
+Run each part under `nohup` / `tmux` (6-9 h). GPU memory: measured only on H200 141 GB; one expert (28 GB bf16) + LoRA + activations
+with gradient checkpointing should fit an 80 GB card, but this was not verified — if a part OOMs on 80 GB, report it rather than
+changing flags. Host RAM ~45 GB.
 
 ## 6. Evaluation (per arm, one GPU, ~1 h)
 ```bash
@@ -105,6 +107,11 @@ It runs:
    sensor, pad-time F1, time IoU, onset / release error, total and per-finger force correlation, load-share error, relative and
    oracle-newton MAE), next to the baselines that need no extra data: "frame-0 touch repeated" and "twin sim touch" →
    `$R2S2R/outputs/R2S2V_mug/hf25/eval/{table.md, scores.json}`. CPU, seconds; rerun any time (`python $C/score_hf25.py`).
+
+GPU memory for step 1: as configured, the whole pipeline (both experts + text encoder, ~70 GB of weights) sits on the GPU, which
+needs > 80 GB. On an 80 GB card set `W_GPU_MEMORY_MODE=model_cpu_offload` (or `sequential_cpu_offload`, slower) before the
+`ev_*` command: the framework's own offload helper then places the models (needs ~70 GB of host RAM). The authors ran only the
+all-on-GPU mode.
 
 Two optional reference rows run only on the authors' cluster and are skipped automatically elsewhere (the table simply lacks
 them): an external R6 touch regressor on the generated videos (needs the glove geometry file) and mug / hand IoU of the generated
@@ -121,9 +128,9 @@ held-out real touch is absolute glove data normalised by its own episode scale.
 ```bash
 git clone -b for-amir https://github.com/tracyhann/tac-sim2real.git && cd tac-sim2real/experiments/finetune/2026-10-24
 export R2S2R=/data/hf25 && bash setup.sh                                   # ~1 h, dominated by the 69 GB download
-for p in FHN_high FHN_low SVO_high SVO_low CDS_high CDS_low; do             # 6 GPUs in parallel, or sequentially; rerun a part until exit 0
-  until bash _common/code/train.sh $p; do sleep 30; done
-done
+for p in FHN_high FHN_low SVO_high SVO_low CDS_high CDS_low; do             # one GPU each: 6 in parallel (CUDA_VISIBLE_DEVICES=k) or sequentially; rerun a part until exit 0
+  nohup bash -c "until bash _common/code/train.sh $p; do sleep 30; done" > train_$p.log 2>&1 &   # drop the & to run sequentially
+done; wait
 for a in FHN SVO CDS; do bash _common/code/train.sh ev_${a}_500; done
 cat $R2S2R/outputs/R2S2V_mug/hf25/eval/table.md
 ```

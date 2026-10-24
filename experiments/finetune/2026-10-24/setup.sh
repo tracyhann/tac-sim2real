@@ -7,7 +7,7 @@
 #   models/W                          the backbone weights (model W) from Hugging Face (69 GB; --no-weights skips)
 #   outputs/R2S2V_mug/hf25/dataset    the prepared training set from Hugging Face (65 MB)
 #   data/mug-sim2video-pose-tactile   (--raw-release) the raw public release the training set was built from (42 MB; not needed to train)
-# Idempotent: every step skips what already exists. Needs git, python3.12 (or uv), ~70 GB of disk, internet.
+# Idempotent: every step skips what already exists. Needs git, internet, ~85 GB of disk; Python 3.12 or uv (installed if neither is present).
 set -eo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); C=$HERE/_common/code
 R=${R2S2R:-}; [ -n "$R" ] || { echo "usage: R2S2R=<root dir> bash setup.sh [--no-weights] [--raw-release]"; exit 2; }
@@ -26,6 +26,9 @@ git -C $V fetch -q origin $VXF_COMMIT 2>/dev/null || true; git -C $V checkout -q
 echo "== 2/6 Python env $R/envs/videoxfun"
 PY=$R/envs/videoxfun/bin/python
 if [ ! -x $PY ]; then
+  if ! command -v uv > /dev/null && ! command -v python3.12 > /dev/null; then        # neither: get uv (it downloads a Python 3.12 itself)
+    python3 -m pip install -q --user uv 2>/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh; export PATH=$HOME/.local/bin:$PATH
+  fi
   if command -v uv > /dev/null; then uv venv --python 3.12 $R/envs/videoxfun; else python3.12 -m venv $R/envs/videoxfun; fi
 fi
 $PY -m pip --version > /dev/null 2>&1 || $PY -m ensurepip --upgrade > /dev/null 2>&1 || uv pip install --python $PY pip   # uv venvs ship without pip
