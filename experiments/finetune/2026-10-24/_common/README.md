@@ -8,10 +8,11 @@ data, prompts, normalisation, touch head, trainer settings, steps, test cases an
 runs them (downloads, layout, dataset build, launch, monitoring, eval): [../README.md](../README.md).
 
 ## Common setup (user 2026-10-24)
-- **Model.** Wan2.2-Fun-A14B-Control, LoRA on both experts (high / low noise), as the F / H runs.
+- **Model.** W (anonymised two-expert video diffusion transformer; weights from the anonymous Hugging Face copy, see the runbook), LoRA on both
+  experts (high / low noise), as the F / H runs.
 - **Data.** The 25 pairs of the public release https://huggingface.co/datasets/tracyhan816/mug-sim2video-pose-tactile
   (commit 6cf129c; `fetch_hf.sh` -> `$R2S2R/data/mug-sim2video-pose-tactile/`; the prepared set is on Hugging Face as
-  [tracyhan816/mug-video-touch-lora-hf25](https://huggingface.co/datasets/tracyhan816/mug-video-touch-lora-hf25)): zero-shot A14B video (832 x 480, 81 frames)
+  [tracyhan816/mug-video-touch-lora-hf25](https://huggingface.co/datasets/tracyhan816/mug-video-touch-lora-hf25)): zero-shot W video (832 x 480, 81 frames)
   of a counterfactual replay of clip edf79415 + that replay's simulated touch of the left glove (880 channels per frame).
   Groups: r6 head (6), r8b head + top photo (12), r10 user frames (7). Variants: recorded, grip 30 %, friction x0.5,
   +300 g water, 10x fast, +-60 mm shake, claw, rim pinch.
@@ -57,7 +58,7 @@ and on the held-out twins' control.
 Runbook for whoever runs it: [../README.md](../README.md) (downloads, layout, dataset build, launch, monitoring, eval).
 `fetch_hf.sh` · `build_hf25.py` (+ checks -> dataset/check.json) · `prompts.py` · `hf25_patch.py` (head, loss, dataset) ·
 `make_trainer_hf25.py` (-> VideoX-Fun `train_control_lora_hf25.py`) · `train.sh` (parts) · `launch.sh` (pool loops, eval waiter) ·
-`predict_hf25.py` · `regr_hf25.py` · `score_hf25.py` · `videoxfun_patches/` (the two VideoX-Fun trainer patches) · `wan_pipe.py` (portable pipeline loader) · `../setup.sh` + `../env/` · `smoke_tiny.sh` / `launch_smoke.sh`
+`predict_hf25.py` · `regr_hf25.py` · `score_hf25.py` · `videoxfun_patches/` (the two VideoX-Fun trainer patches) · `w_pipe.py` (portable pipeline loader) · `../setup.sh` + `../env/` · `smoke_tiny.sh` / `launch_smoke.sh`
 (tiny-model trainer test, one card, ~3 min; PASSED 10-24 after a dtype fix) · `release_cases.json` · `mac/twin_cubes.sh`.
 Outputs: `$R2S2R/outputs/R2S2V_mug/hf25/{dataset, <ARM>_high, <ARM>_low, out/<ARM>c<CK>[_regr], regr, eval}`. Cluster notes: [CLUSTER.md](CLUSTER.md).
 

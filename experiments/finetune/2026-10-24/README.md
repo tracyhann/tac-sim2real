@@ -1,4 +1,4 @@
-# HF25 · three video + touch LoRAs on Wan2.2-Fun-A14B-Control (FHN / SVO / CDS)
+# HF25 · three video + touch LoRAs on the video model W (FHN / SVO / CDS)
 
 Self-contained runbook. Everything the experiment needs is public: the backbone weights and the data are on Hugging Face,
 the trainer is VideoX-Fun at a pinned commit, the code is this folder. `setup.sh` fetches and installs all of it; `train.sh`
@@ -9,7 +9,8 @@ trains; `train.sh ev_*` evaluates. Design notes: [_common/README.md](_common/REA
 touch-head save / load). The six training runs have not been started.
 
 ## 1. The experiment
-Wan2.2-Fun-A14B-Control is a 14B video diffusion model (two experts: high noise, low noise). We fine-tune it with LoRA so
+W is a video diffusion transformer with two experts (high noise, low noise) and control-video conditioning. Its identity is
+withheld for this internal test: call it "W" everywhere — file names, labels, plots, reports. We fine-tune it with LoRA so
 that, from a first frame + a control video + a text prompt, it generates a 5 s video of a hand carrying a mug AND the paired
 reading of the TouchScale tactile glove: 880 sensors x 81 frames. The touch is a value array, never an image: a small head on
 the low-noise expert's last-layer tokens outputs it and is trained together with the LoRA (video flow-matching loss + touch
@@ -28,8 +29,8 @@ target is u = min(F / S, 0.11) / 0.11. Result = the full touch metric table on t
 ## 2. What you need (all public)
 | item | where | size |
 |---|---|---|
-| backbone weights | Hugging Face [alibaba-pai/Wan2.2-Fun-A14B-Control](https://huggingface.co/alibaba-pai/Wan2.2-Fun-A14B-Control) (Apache-2.0) | 65 GB |
-| trainer / pipeline | GitHub [aigc-apps/VideoX-Fun](https://github.com/aigc-apps/VideoX-Fun) at commit `13bb3c625e8b1e457d7124d92207b49e00e4a6fe` (Apache-2.0) | 50 MB |
+| backbone weights (model W) | Hugging Face [latent-artist/861b8a78d34141a9ad659229049b6423](https://huggingface.co/latent-artist/861b8a78d34141a9ad659229049b6423) (Apache-2.0) | 69 GB |
+| training framework (trainer + pipeline classes) | GitHub [aigc-apps/VideoX-Fun](https://github.com/aigc-apps/VideoX-Fun) at commit `13bb3c625e8b1e457d7124d92207b49e00e4a6fe` (Apache-2.0) | 50 MB |
 | **prepared training set + test cases** | Hugging Face [tracyhan816/mug-video-touch-lora-hf25](https://huggingface.co/datasets/tracyhan816/mug-video-touch-lora-hf25) (CC BY-NC 4.0) — videos, touch arrays, first frames, the three control sets, held-out cases | 64 MB |
 | raw public release (provenance only, not needed to train) | Hugging Face [tracyhan816/mug-sim2video-pose-tactile](https://huggingface.co/datasets/tracyhan816/mug-sim2video-pose-tactile), commit `6cf129c` — 25 videos + hand pose + touch | 42 MB |
 | this code | GitHub [tracyhann/tac-sim2real](https://github.com/tracyhann/tac-sim2real/tree/for-amir), branch `for-amir`, `experiments/finetune/2026-10-24/` | |
@@ -45,18 +46,18 @@ Pick a root directory `R2S2R` for weights, VideoX-Fun, the env and outputs (the 
 ```bash
 git clone -b for-amir https://github.com/tracyhann/tac-sim2real.git
 export R2S2R=/data/hf25                           # any writable path with ~75 GB free
-bash tac-sim2real/experiments/finetune/2026-10-24/setup.sh         # add --no-weights to skip the 65 GB download, --raw-release to also fetch the raw release
+bash tac-sim2real/experiments/finetune/2026-10-24/setup.sh         # add --no-weights to skip the 69 GB download, --raw-release to also fetch the raw release
 ```
 `setup.sh` is idempotent and does, in order: clone VideoX-Fun at the pinned commit; create `$R2S2R/envs/videoxfun` (Python 3.12)
-and install VideoX-Fun's requirements + `env/requirements.txt`; `hf download` the weights to `$R2S2R/models/Wan2.2-Fun-A14B-Control`
+and install VideoX-Fun's requirements + `env/requirements.txt`; `hf download` the W weights to `$R2S2R/models/W`
 and the training set to `$R2S2R/outputs/R2S2V_mug/hf25/dataset`; apply the two trainer patches
 (`_common/code/videoxfun_patches/`: `--inpaint_first_frame_only`, `--resume_lora_weights`) and generate our trainer copy
-`scripts/wan2.2_fun/train_control_lora_hf25.py` + `hf25_patch.py`; run the CPU unit test of the touch head. Layout it creates:
+`train_control_lora_hf25.py` + `hf25_patch.py` (inside the framework's `scripts/` folder); run the CPU unit test of the touch head. Layout it creates:
 ```
 $R2S2R/
   third_party/VideoX-Fun/                 pinned checkout + patched trainer copy
   envs/videoxfun/                         the Python env ($R2S2R/envs/videoxfun/bin/python)
-  models/Wan2.2-Fun-A14B-Control/         high_noise_model/ low_noise_model/ Wan2.1_VAE.pth models_t5_umt5-xxl-enc-bf16.pth google/
+  models/W/                               high_noise_model/ low_noise_model/ (the two experts), the VAE and text-encoder files, google/ (tokenizer)
   outputs/R2S2V_mug/hf25/dataset/         the training set (see the dataset card for every file and format)
   outputs/R2S2V_mug/hf25/<ARM>_{high,low}/   training outputs (created by train.sh)
   cache/huggingface/                      HF cache
@@ -119,7 +120,7 @@ held-out real touch is absolute glove data normalised by its own episode scale.
 ## 8. For an agent: the whole thing as commands
 ```bash
 git clone -b for-amir https://github.com/tracyhann/tac-sim2real.git && cd tac-sim2real/experiments/finetune/2026-10-24
-export R2S2R=/data/hf25 && bash setup.sh                                   # ~1 h, dominated by the 65 GB download
+export R2S2R=/data/hf25 && bash setup.sh                                   # ~1 h, dominated by the 69 GB download
 for p in FHN_high FHN_low SVO_high SVO_low CDS_high CDS_low; do             # 6 GPUs in parallel, or sequentially; rerun a part until exit 0
   until bash _common/code/train.sh $p; do sleep 30; done
 done
@@ -127,15 +128,19 @@ for a in FHN SVO CDS; do bash _common/code/train.sh ev_${a}_500; done
 cat $R2S2R/outputs/R2S2V_mug/hf25/eval/table.md
 ```
 Do not edit VideoX-Fun beyond the two patches; do not change the trainer flags (the arms must stay identical except the control);
-report the table and the per-case `out/<ARM>c500/*.json`.
+report the table and the per-case `out/<ARM>c500/*.json`. Refer to the backbone only as "W".
 
-## 9. Troubleshooting
+## 9. Anonymisation
+The backbone is referred to as **W** throughout this folder, the dataset card and the output names (`w-hf25...`). The training
+framework and the published weight files keep their own names; do not copy them into labels, tables or write-ups — results must
+not be attributable to a specific model.
+
+## 10. Troubleshooting
 - `set R2S2R=...`: export the root (every script needs it).
 - `resume_lora_weights: ... tactile_head-N.pt missing`: a kill landed between the two saves; `train.sh` deletes such a checkpoint
   on the next start and resumes from the previous pair.
 - `expected scalar type Float but found BFloat16` or a shape assert in `hf25_patch.py`: the trainer copy is stale — rerun
   `python _common/code/make_trainer_hf25.py $R2S2R/third_party/VideoX-Fun`.
 - The trainer imports `tensorboard`, `decord`, `av`; `setup.sh` installs them. CUDA OOM on < 80 GB cards: not supported as configured.
-- Smoke test without the full model (`_common/code/smoke_tiny.sh`) uses a tiny stand-in network built by
-  `../2026-10-22/dual_mode_lora/code/make_tiny.py` from the real VAE / T5; adapt its paths if you want it elsewhere.
+- `_common/code/smoke_tiny.sh` (trainer smoke test on a tiny stand-in network) is wired to the authors' cluster; see CLUSTER.md.
 - Authors' cluster specifics (job pool, log locations, launchers): [_common/CLUSTER.md](_common/CLUSTER.md).

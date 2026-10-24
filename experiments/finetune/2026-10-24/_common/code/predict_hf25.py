@@ -1,13 +1,13 @@
 """Generate video + touch with one HF25 arm (train.sh part ev_<ARM>_<CK>; root = env R2S2R, see 2026-10-24/README.md): both experts' LoRAs at step CK merged into
-Wan2.2-Fun-A14B-Control, the low-noise expert's touch head (tactile_head-CK.pt, hf25_patch.TactileHead) on top, every case of
+the W pipeline, the low-noise expert's touch head (tactile_head-CK.pt, hf25_patch.TactileHead) on top, every case of
 dataset/test_cases.json that has a control in this arm's format.
 Job = the training job: frame 0 known, frames 1-80 generated, control = the arm's control. Settings = the dual-mode G protocol
-(dual_mode_infer_diag 2026-10-23): CFG 6, the start frame also as reference image, 50 steps, shift 5, Wan negative prompt; seed 0.
+(dual_mode_infer_diag 2026-10-23): CFG 6, the start frame also as reference image, 50 steps, shift 5, the framework's standard negative prompt; seed 0.
 Touch: a forward pre-hook on the low-noise expert's output Head keeps the tokens of the LAST denoising step (t < boundary, so
 the low expert); the conditional half of the CFG batch goes through the head with the start's frame-0 touch -> (81, 880) u ->
 F / S. No pixels anywhere.
 Writes outputs/R2S2V_mug/hf25/out/<ARM>c<CK>/<case>_s<seed>.{mp4, _tactile.npy (RELATIVE touch F / S), json}; held-out
-cases also go to A_baseline/gen/wan22fun-a14b-hf25<arm>c<CK>-<real|sim>/<clip>/seed<s>.mp4 for labeladh.py. Skips cases done.
+cases also go to A_baseline/gen/w-hf25<arm>c<CK>-<real|sim>/<clip>/seed<s>.mp4 (the video half, for the authors' IoU scorer). Skips cases done.
   envs/videoxfun/bin/python predict_hf25.py --arm FHN --ckpt 500 [--cases G_real_55494490 ...] [--seeds 0]"""
 import argparse
 import json
@@ -20,7 +20,7 @@ import numpy as np
 import torch
 
 HERE = Path(__file__).resolve().parent; sys.path.insert(0, str(HERE))
-from wan_pipe import ROOT as R, WAN_NEGATIVE, load_pipe, write_video  # noqa: E402  (root = env R2S2R)
+from w_pipe import ROOT as R, NEG_PROMPT, load_pipe, write_video  # noqa: E402  (root = env R2S2R)
 from hf25_patch import TactileHead, attach_capture, rel_from_u, video_tokens  # noqa: E402
 
 O = R / "outputs/R2S2V_mug/hf25"; DS = O / "dataset"; GEN_DIR = R / "outputs/A_baseline/gen"      # gen/: the video half for the (cluster-only) mug / hand IoU scorer
@@ -42,7 +42,7 @@ def main():
     print(tag, len(todo), "cases to run", flush=True)
     if not todo:
         return
-    pipe, vae, sch, boundary = load_pipe("a14b")                                          # also puts VideoX-Fun on sys.path
+    pipe, vae, sch, boundary = load_pipe("w")                                          # also puts VideoX-Fun on sys.path
     from videox_fun.utils import get_image_latent, get_video_to_video_latent, merge_lora
     pipe = merge_lora(pipe, str(lo), 1.0, device="cuda", dtype=torch.bfloat16)                       # transformer = low-noise expert
     pipe = merge_lora(pipe, str(hi), 1.0, device="cuda", dtype=torch.bfloat16, sub_transformer_name="transformer_2")
@@ -56,7 +56,7 @@ def main():
         ref = None if a.no_ref else get_image_latent(str(DS / c["start"]), sample_size=[H, W])
         g = torch.Generator(device="cuda").manual_seed(seed); t = time.time(); cap.clear()
         with torch.no_grad():
-            out = pipe(c["text"], num_frames=N, negative_prompt=WAN_NEGATIVE, height=H, width=W, generator=g, guidance_scale=a.guidance,
+            out = pipe(c["text"], num_frames=N, negative_prompt=NEG_PROMPT, height=H, width=W, generator=g, guidance_scale=a.guidance,
                        num_inference_steps=a.steps, video=video, mask_video=mask, control_video=cv, control_camera_video=None, ref_image=ref,
                        boundary=boundary, shift=5).videos
             x = cap[0][-1:]                                                   # last call = last step (low expert); CFG batch = [uncond, cond]
@@ -65,7 +65,7 @@ def main():
         name = f"{c['case']}_s{seed}"; write_video(od / f"{name}.mp4", fr, fps=16); np.save(od / f"{name}_tactile.npy", rel_from_u(u))
         kv = float(np.abs(fr[0].astype(np.float32) - st.astype(np.float32)).mean())
         if c["kind"] == "heldout":
-            gd = GEN_DIR / f"wan22fun-a14b-hf25{a.arm.lower()}c{a.ckpt}-{c['source']}" / c["clip"]; gd.mkdir(parents=True, exist_ok=True)
+            gd = GEN_DIR / f"w-hf25{a.arm.lower()}c{a.ckpt}-{c['source']}" / c["clip"]; gd.mkdir(parents=True, exist_ok=True)
             write_video(gd / f"seed{seed}.mp4", fr, fps=16)
             (gd / f"seed{seed}.json").write_text(json.dumps(dict(model=gd.parent.name, clip=c["clip"], seed=seed, width=W, height=H, frames=N, fps=16, steps=a.steps,
                                                                   control=f"HF25 LoRA {a.arm} step {a.ckpt}: {c['control'][a.arm]}; start = {c['source']} frame 0 (+ its touch to the head)",

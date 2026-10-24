@@ -1,5 +1,5 @@
 #!/bin/bash
-# Trainer smoke test on the tiny Wan stand-in (lora_ge/tiny_model: 2 blocks, dim 256, real VAE / T5), ONE pool card, ~10 min;
+# Trainer smoke test on the tiny stand-in network (lora_ge/tiny_model: 2 blocks, dim 256, real VAE / T5), ONE pool card, ~10 min;
 # NOT part of the experiment. Run 1: 3 steps with the touch head, checkpoint at 2; run 2: resumed to step 4 (reloads
 # tactile_head-2.pt). Checks: checkpoint-{2,3,4}.safetensors + tactile_head-{2,3,4}.pt exist, the resumed run logged the head
 # load, every step's tactile loss is finite, the head file loads into hf25_patch.TactileHead(256).

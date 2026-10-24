@@ -1,9 +1,9 @@
-"""Portable loader for the Wan2.2-Fun-A14B-Control pipeline (VideoX-Fun) + the video writer and negative prompt the HF25
-scripts use. Everything is found under one root (env R2S2R):
+"""Portable loader for the W video-diffusion pipeline (model "W": the identity of the backbone is withheld for the internal
+test; VideoX-Fun provides the pipeline classes) + the video writer and negative prompt the HF25 scripts use. Everything is found under one root (env R2S2R):
   $R2S2R/third_party/VideoX-Fun                 the VideoX-Fun checkout (config/wan2.2/wan_civitai_i2v.yaml, videox_fun/)
-  $R2S2R/models/Wan2.2-Fun-A14B-Control         the weights as downloaded from Hugging Face alibaba-pai/Wan2.2-Fun-A14B-Control
+  $R2S2R/models/W                                the weights as downloaded from Hugging Face latent-artist/861b8a78d34141a9ad659229049b6423
 Every component goes to the GPU right after it is loaded (host RAM can be small). Loading takes 2-4 minutes from local disk;
-on a networked file system copy the weights to local scratch first (WAN_STAGE_DIR=/path makes load_pipe do that)."""
+on a networked file system copy the weights to local scratch first (W_STAGE_DIR=/path makes load_pipe do that)."""
 import os
 import shutil
 import sys
@@ -14,16 +14,16 @@ import numpy as np
 import torch
 
 ROOT = Path(os.environ.get("R2S2R") or ("/scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r" if Path("/scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r").exists() else "."))
-V = ROOT / "third_party/VideoX-Fun"; MODEL = ROOT / "models/Wan2.2-Fun-A14B-Control"; CONFIG = "config/wan2.2/wan_civitai_i2v.yaml"
+V = ROOT / "third_party/VideoX-Fun"; MODEL = ROOT / "models/W"; CONFIG = "config/wan2.2/wan_civitai_i2v.yaml"; WEIGHTS_REPO = "latent-artist/861b8a78d34141a9ad659229049b6423"
 DEV, DT = "cuda", torch.bfloat16
-# VideoX-Fun's standard Wan negative prompt (as in its examples)
-WAN_NEGATIVE = ("色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，"
+# the framework's standard negative prompt for this model family (as in its examples)
+NEG_PROMPT = ("色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，"
                 "多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走")
 
 
 def stage(src):
-    """optional copy of the weights to a local directory (WAN_STAGE_DIR); returns the directory to load from"""
-    d = os.environ.get("WAN_STAGE_DIR")
+    """optional copy of the weights to a local directory (W_STAGE_DIR); returns the directory to load from"""
+    d = os.environ.get("W_STAGE_DIR")
     if not d:
         return src
     dst = Path(d) / src.name
@@ -32,11 +32,11 @@ def stage(src):
     return dst
 
 
-def load_pipe(model="a14b"):
-    """-> (pipe, vae, scheduler, boundary); pipe.transformer = low-noise expert, pipe.transformer_2 = high-noise expert"""
-    assert model == "a14b", model
+def load_pipe(model="w"):
+    """-> (pipe, vae, scheduler, boundary); pipe.transformer = low-noise expert, pipe.transformer_2 = high-noise expert (W has two experts)"""
+    assert model == "w", model
     assert (V / CONFIG).exists(), f"VideoX-Fun not found at {V} (set R2S2R)"
-    assert (MODEL / "low_noise_model").exists(), f"weights not found at {MODEL} (hf download alibaba-pai/Wan2.2-Fun-A14B-Control --local-dir {MODEL})"
+    assert (MODEL / "low_noise_model").exists(), f"weights not found at {MODEL} (hf download {WEIGHTS_REPO} --local-dir {MODEL})"
     sys.path.insert(0, str(V)); os.chdir(V)
     from diffusers import FlowMatchEulerDiscreteScheduler
     from omegaconf import OmegaConf

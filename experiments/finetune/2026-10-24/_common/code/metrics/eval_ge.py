@@ -1,4 +1,5 @@
-"""Scores and tables for the dual-mode LoRA (held-out clips only), on RELATIVE touch (panel v3: F / S, S = the episode's
+"""[Trimmed copy for the HF25 scorer: the metric functions only; the original lives in the authors' tree.]
+Scores and tables for the dual-mode LoRA (held-out clips only), on RELATIVE touch (panel v3: F / S, S = the episode's
 touch scale; user 2026-10-22). Primary, scale-free (prediction and truth both relative, both clipped at the panel's caps):
   f1_6mm      contact F1, taxels pooled in 4 x 4 blocks per pad (6 mm), contact = taxel > THR_REL (same threshold on both sides)
   f1_pad      the same with whole pads as units (15);  f1_taxel  1.5 mm cells
@@ -103,47 +104,3 @@ def labeladh(model, clip, seed=0):
     if not p.exists():
         return {}
     j = json.loads(p.read_text()); return {k: j[k] for k in ("mug_iou", "hand_iou", "mug_iou_late", "hand_iou_late") if k in j}
-
-
-def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--epochs", nargs="+", type=int, default=[8]); a = ap.parse_args()
-    sys.path.insert(0, str(HERE)); from ge_cases import cases
-    rows = {r["id"]: r for r in json.loads((DS / "rows.json").read_text())}; res = []
-    methods = [(f"{run}p{p}", LG / "out" / f"{run}p{p}") for p in a.epochs for run in ("U", "G", "E", "R")] + [("regressor R6, real+sim", LG / "out" / "regr_E_best"), ("regressor R6, real only", LG / "out" / "regr_R_best")]   # R0 (L1) collapses to zero (loss_table)
-    for c in cases(None):
-        r = rows[c["row"]]; z = np.load(DS / r["tactile"]); T, T_N, S = z["touch_rel"], z["touch"], float(z["S"])
-        grp = ("G " if c["job"] == "G" else "E ") + ("new participant (actor_01)" if r["actor"] == "actor_01" else "held-out twin, real video" if r["kind"] == "real" else "held-out twin, generated video (sim touch)")
-        base = dict(case=c["case"], job=c["job"], ctrl=c["ctrl"], row=c["row"], group=grp, touch0=c.get("touch0"))
-        for name, d in methods:
-            for f in sorted(d.glob(f"{c['case']}_s*_tactile.npy")):
-                seed = int(f.name.split("_s")[-1].split("_")[0]); adh = {}
-                if c["job"] == "G":
-                    run, p = name[0], name[2:]; adh = labeladh(f"wan22fun-a14b-ge{run}p{p}g{'t' if c['touch0'] else 'n'}", r["clip"], seed)
-                res.append(dict(base, method=name, seed=seed, **metrics(np.load(f), T, S, T_N), **adh))
-        if c["job"] == "G" and c["touch0"]:                         # references: the earlier held-out LoRA h2 (step 600, start = real
-            for ck in (600, 300):                                   # frame 0 + its touch, ref image passed), zero-shot video, real video
-                f = R / "outputs/R2S2V_mug/lora_tactile/out" / f"wan22fun-a14b-tacth2c{ck}-real" / f"{r['clip']}_seed0_tactile.npy"
-                if f.exists():
-                    res.append(dict(base, method=f"h2 step {ck} (earlier LoRA) [ABSOLUTE N scoring, panel v1]", seed=0,
-                                    **metrics(np.load(f), T_N, thr=0.15, tot=5.0, cap=3.0), **labeladh(f"wan22fun-a14b-tacth2c{ck}-real", r["clip"]))); break
-            res.append(dict(base, method="zero-shot A14B (video only)", seed=0, **labeladh("wan22fun-a14b-head-c5", r["clip"])))
-            res.append(dict(base, method="real video (ceiling)", seed=0, **labeladh("real", r["clip"])))
-        if c["job"] == "E" and c["ctrl"] in ("da", "sim"):           # baselines once per (row, target), listed under each control
-            res.append(dict(base, method="frame-0 touch repeated", seed=0, **metrics(np.repeat(T[:1], len(T), 0), T, S, T_N)))
-            st = LG / "simtouch" / f"{r['clip']}.npz"
-            if r["kind"] == "real" and st.exists():
-                sim = np.load(st)["sim"]; res.append(dict(base, method="twin sim touch (own scale)", seed=0, **metrics(sim / touch_scale(sim), T, S, T_N)))
-    out = LG / "eval"; out.mkdir(exist_ok=True); (out / "scores.json").write_text(json.dumps(dict(panel=PANEL_VERSION, cap_rel=CAP, thr_rel=THR, tot_rel=TOT, rows=res), indent=1))
-    # tables: mean over clips (and seeds) per group x control x method
-    lines = ["| job / clips | control | method | n | " + " | ".join(KEYS) + " |", "|" + "---|" * (len(KEYS) + 4)]
-    keyf = lambda x: (x["group"], x["ctrl"], x.get("touch0"), x["method"])
-    for k in sorted({keyf(x) for x in res}, key=lambda k: (k[0], k[1], str(k[2]), k[3])):
-        xs = [x for x in res if keyf(x) == k]
-        vals = [float(np.nanmean([x[m] for x in xs if m in x])) if any(m in x and not np.isnan(x[m]) for x in xs) else float("nan") for m in KEYS]
-        ctl = k[1] + ("" if k[2] is None else (" + frame-0 touch" if k[2] else ", no frame-0 touch"))
-        lines.append(f"| {k[0]} | {ctl} | {k[3]} | {len({x['row'] for x in xs})} | " + " | ".join("-" if np.isnan(v) else (f"{v:.0f}" if m.endswith("_ms") else f"{v:.3f}") for v, m in zip(vals, KEYS)) + " |")
-    (out / "table.md").write_text("\n".join(lines) + "\n"); print("\n".join(lines))
-
-
-if __name__ == "__main__":
-    main()

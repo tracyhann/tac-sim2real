@@ -5,7 +5,7 @@ pass as the generated video, and the touch loss trains the LoRA too.
   TactileHead     tokens of the video (f latent frames x hw) -> per latent frame one attention pooling over its hw tokens
                   (+ the known frame-0 touch) -> temporal conv -> 4 x 880 per latent frame (frame 0: 1 x 880) -> (81, 880)
                   in u = min(F / S, CAP) / CAP (sigmoid), the loss-table target. ~13 M params, fp32.
-  attach_capture  forward pre-hook on the Wan output Head: the tokens entering it (= the last block's output) are kept; with
+  attach_capture  forward pre-hook on the DiT's output Head: the tokens entering it (= the last block's output) are kept; with
                   VideoX-Fun's non-reentrant checkpointing they carry the graph, so the touch loss backpropagates.
   tactile_loss    R1 of the loss table (Huber + 1/2 L1, active taxels x10; TouchSight), the best contact F1 there.
   HF25Dataset     ImageVideoControlDataset + sample["tactile"] = the row's u array (81, 880) (tactile .npz key "u").
@@ -61,9 +61,9 @@ def video_tokens(x, hw, f, ref):
 
 
 def attach_capture(transformer):
-    """keep the tokens entering the Wan output Head (list with the latest capture); the transformer is used unchanged"""
-    from videox_fun.models.wan_transformer3d import Head as WanHead
-    heads = [m for m in transformer.modules() if isinstance(m, WanHead)]; assert len(heads) == 1, len(heads)
+    """keep the tokens entering the DiT's output Head (list with the latest capture); the transformer is used unchanged"""
+    from videox_fun.models.wan_transformer3d import Head as DiTHead
+    heads = [m for m in transformer.modules() if isinstance(m, DiTHead)]; assert len(heads) == 1, len(heads)
     cap = []
 
     def pre(module, args):

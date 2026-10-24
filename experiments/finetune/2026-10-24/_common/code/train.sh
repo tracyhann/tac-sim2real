@@ -1,5 +1,5 @@
 #!/bin/bash
-# HF25 video + touch LoRAs on Wan2.2-Fun-A14B-Control (user 2026-10-24): three arms, same 25 HF pairs (video 832 x 480 + the
+# HF25 video + touch LoRAs on the video model W (user 2026-10-24): three arms, same 25 HF pairs (video 832 x 480 + the
 # glove's 880 touch values per frame, normalised F / S), same prompts, same trainer settings as the F / H runs
 # (lora_tactile/run_lora.sh: rank 64 / alpha 32, lr 1e-4 constant, first-frame-only inpaint mask, control_ref + first_frame,
 # resume from the newest LoRA weights), 500 steps per expert; the arms differ ONLY in the control (build_hf25.py):
@@ -34,7 +34,7 @@ case $part in
         [ -f $OUT/tactile_head-$n.pt ] || { echo "checkpoint-$n without its head: removed"; rm -f "$f"; }; done
     fi
     cd $V && $PY -m accelerate.commands.launch --num_processes 1 --num_machines 1 --mixed_precision bf16 --dynamo_backend no scripts/wan2.2_fun/train_control_lora_hf25.py \
-      --config_path config/wan2.2/wan_civitai_i2v.yaml --pretrained_model_name_or_path $R/models/Wan2.2-Fun-A14B-Control \
+      --config_path config/wan2.2/wan_civitai_i2v.yaml --pretrained_model_name_or_path $R/models/W \
       --train_data_dir $DS/ --train_data_meta $DS/metadata_$ARM.json \
       --enable_bucket --fix_sample_size 480 832 --image_sample_size 832 --video_sample_size 832 --token_sample_size 832 \
       --video_sample_stride 1 --video_sample_n_frames 81 --train_batch_size 1 --video_repeat 1 --gradient_accumulation_steps 1 --dataloader_num_workers 2 \
@@ -55,7 +55,7 @@ case $part in
     [ -f $O/${ARM}_low/tactile_head-$CK.pt ] || { echo "no ${ARM}_low tactile_head-$CK.pt"; exit 1; }
     $PY $C/predict_hf25.py --arm $ARM --ckpt $CK || exit 1
     if [ -f $R/data/TouchScale/metadata/glove_geometry_left.json ]; then $PY $C/regr_hf25.py --arm $ARM --ckpt $CK || exit 1; else echo "regr_hf25 skipped (no glove geometry here)"; fi
-    if [ -f $X/labeladh.py ]; then (cd $X && bash run_r2s.sh labeladh.py --clips tsmug-55494490 tsmug-4397541c --models wan22fun-a14b-hf25${arm}c$CK-real wan22fun-a14b-hf25${arm}c$CK-sim); else echo "labeladh (mug / hand IoU vs sim, SAM3) skipped: original cluster only"; fi
+    if [ -f $X/labeladh.py ]; then (cd $X && bash run_r2s.sh labeladh.py --clips tsmug-55494490 tsmug-4397541c --models w-hf25${arm}c$CK-real w-hf25${arm}c$CK-sim); else echo "labeladh (mug / hand IoU vs sim, SAM3) skipped: original cluster only"; fi
     $PA $C/score_hf25.py ;;
   *) echo "unknown part $part"; exit 2 ;;
 esac

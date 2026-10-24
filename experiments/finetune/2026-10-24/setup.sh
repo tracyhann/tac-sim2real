@@ -4,7 +4,7 @@
 # Creates under $R2S2R:
 #   third_party/VideoX-Fun            git clone, pinned commit, + the two trainer patches + our trainer copy (train_control_lora_hf25.py)
 #   envs/videoxfun                    Python 3.12 venv with env/requirements.txt (torch 2.8 cu128, diffusers 0.35.1, peft 0.21.2, ...)
-#   models/Wan2.2-Fun-A14B-Control    the backbone weights from Hugging Face (65 GB; --no-weights skips)
+#   models/W                          the backbone weights (model W) from Hugging Face (69 GB; --no-weights skips)
 #   outputs/R2S2V_mug/hf25/dataset    the prepared training set from Hugging Face (65 MB)
 #   data/mug-sim2video-pose-tactile   (--raw-release) the raw public release the training set was built from (42 MB; not needed to train)
 # Idempotent: every step skips what already exists. Needs git, python3.12 (or uv), ~70 GB of disk, internet.
@@ -13,7 +13,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); C=$HERE/_common/code
 R=${R2S2R:-}; [ -n "$R" ] || { echo "usage: R2S2R=<root dir> bash setup.sh [--no-weights] [--raw-release]"; exit 2; }
 WEIGHTS=1; RAW=0; for a in "$@"; do case $a in --no-weights) WEIGHTS=0 ;; --raw-release) RAW=1 ;; *) echo "unknown option $a"; exit 2 ;; esac; done
 VXF_COMMIT=13bb3c625e8b1e457d7124d92207b49e00e4a6fe
-WEIGHTS_REPO=alibaba-pai/Wan2.2-Fun-A14B-Control
+WEIGHTS_REPO=latent-artist/861b8a78d34141a9ad659229049b6423
 DATASET_REPO=tracyhan816/mug-video-touch-lora-hf25
 RAW_REPO=tracyhan816/mug-sim2video-pose-tactile; RAW_REV=6cf129c769161eec04b5566a903163913b75ca33
 mkdir -p $R/third_party $R/envs $R/models $R/outputs/R2S2V_mug/hf25 $R/data $R/cache/huggingface; export HF_HOME=${HF_HOME:-$R/cache/huggingface}
@@ -35,12 +35,13 @@ $PY -m pip install -q -r $HERE/env/requirements.txt
 $PY -c "import torch, diffusers, peft, accelerate, transformers, av, decord, cv2, imageio, tensorboard; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), '| diffusers', diffusers.__version__, 'peft', peft.__version__)"
 HF=$R/envs/videoxfun/bin/hf
 
-echo "== 3/6 backbone weights -> $R/models/Wan2.2-Fun-A14B-Control"
+echo "== 3/6 backbone weights (model W) -> $R/models/W"
 if [ $WEIGHTS = 1 ]; then
-  [ -f $R/models/Wan2.2-Fun-A14B-Control/low_noise_model/diffusion_pytorch_model.safetensors ] && [ -f $R/models/Wan2.2-Fun-A14B-Control/high_noise_model/diffusion_pytorch_model.safetensors ] \
-    || $HF download $WEIGHTS_REPO --local-dir $R/models/Wan2.2-Fun-A14B-Control
-  for f in low_noise_model/diffusion_pytorch_model.safetensors high_noise_model/diffusion_pytorch_model.safetensors Wan2.1_VAE.pth models_t5_umt5-xxl-enc-bf16.pth google; do
-    [ -e $R/models/Wan2.2-Fun-A14B-Control/$f ] || { echo "missing $f in the weights"; exit 1; }; done
+  [ -f $R/models/W/low_noise_model/diffusion_pytorch_model.safetensors ] && [ -f $R/models/W/high_noise_model/diffusion_pytorch_model.safetensors ] \
+    || $HF download $WEIGHTS_REPO --local-dir $R/models/W
+  for f in low_noise_model/diffusion_pytorch_model.safetensors high_noise_model/diffusion_pytorch_model.safetensors models_t5_umt5-xxl-enc-bf16.pth google; do
+    [ -e $R/models/W/$f ] || { echo "missing $f in the weights"; exit 1; }; done
+  ls $R/models/W/*VAE*.pth > /dev/null 2>&1 || { echo "missing the VAE file in the weights"; exit 1; }
 else
   echo "skipped (--no-weights)"
 fi

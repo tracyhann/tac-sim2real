@@ -3,7 +3,7 @@ simulation renders (controls) of the original workspace; its output is published
 tracyhan816/mug-video-touch-lora-hf25, which setup.sh downloads - nobody else needs to run this. One set of 25 training pairs, three
 metadata files that differ ONLY in the control video, so the control is the only difference between the arms.
 
-Rows = the 25 pairs of the public release (data/mug-sim2video-pose-tactile, fetch_hf.sh, commit 6cf129c): the zero-shot A14B
+Rows = the 25 pairs of the public release (data/mug-sim2video-pose-tactile, fetch_hf.sh, commit 6cf129c): the zero-shot W
 video (832 x 480, 81 frames, 16 fps, copied as is) + the replay's simulated touch of the left glove (normal_N, 880 channels,
 sampled at the video frames). The touch stays a VALUE array (hf25_patch.py, user 10-24: never pixels): tactile/<id>.npz with
 touch (N), touch_rel = F / S, S, t and u = min(F / S, CAP) / CAP, the head's target; S = median total force over the frames with
@@ -136,7 +136,7 @@ def test_cases(rows):
 def main():
     for d in ("video", "start", "tactile", "ctrl"):
         (DS / d).mkdir(parents=True, exist_ok=True)
-    cases = json.loads((HERE / "release_cases.json").read_text())
+    cases = json.loads(((O / "release_cases.json") if (O / "release_cases.json").exists() else (HERE / "release_cases.json")).read_text())   # id -> generation + control (authors' map, kept outside the repo)
     meta = {m["id"]: m for m in csv.DictReader((HFD / "metadata.csv").open())}
     assert set(meta) == {c["id"] for c in cases} and len(cases) == 25, "release cases != HF metadata"
     rows, checks, bad = [], {}, []

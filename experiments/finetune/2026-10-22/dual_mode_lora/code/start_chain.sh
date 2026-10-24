@@ -1,1 +1,0 @@
-setsid nohup bash /scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r/experiments/R2S2V_mug/lora_ge/chain_ge.sh > /scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r/logs/lora_ge/chain.log 2>&1 < /dev/null &

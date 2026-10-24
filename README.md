@@ -1,43 +1,20 @@
-# tac-sim2real
+# tac-sim2real · branch `for-amir`
 
-Experiment code for touch-grounded real-to-sim-to-video. A tactile glove records contact during tabletop manipulation (TouchScale). We rebuild each clip as a physics replay, then fine-tune a video model to generate head-camera video together with the glove's touch, and to estimate touch from video.
+Experiment code for touch-grounded real-to-sim-to-video: a tactile glove records contact during tabletop manipulation, each
+clip is rebuilt as a physics replay, and a video diffusion model is fine-tuned (LoRA) to generate head-camera video together
+with the glove's touch.
 
-The real-to-sim harness that produces the simulation replays (cliprep) lives in a separate repository. This repository holds the fine-tuning experiments.
+This branch contains one experiment, packaged to be run by someone outside the lab:
+**`experiments/finetune/2026-10-24/`** — three video + touch LoRAs on the video model **W** that differ only in the control
+video (FHN / SVO / CDS). Start at its [README](experiments/finetune/2026-10-24/README.md) (or [AGENTS.md](AGENTS.md)): every
+download is public (W weights and the prepared training set on Hugging Face, the training framework at a pinned commit),
+`setup.sh` installs the environment (`env/requirements.txt`) and fetches everything, `train.sh` trains and evaluates.
 
-## Layout
+The backbone is anonymised for this internal test — refer to it as "W" in labels, tables and write-ups.
 
 ```
-experiments/
-  finetune/
-    INDEX.md                       one row per experiment: date, title, what, status / headline
-    <date started>/<short title>/
-      README.md                    goal, data split, steps, outputs, results
-      code/                        the scripts that experiment ran
+experiments/finetune/
+  INDEX.md
+  2026-10-24/            README.md (runbook)  setup.sh  env/  _common/{README.md, CLUSTER.md, code/}  FHN/ SVO/ CDS/
 ```
-
-Each experiment folder is self-contained. To find a run, start from [`experiments/finetune/INDEX.md`](experiments/finetune/INDEX.md).
-
-## Experiments so far
-
-All fine-tuning uses LoRAs on Wan2.2-Fun-A14B-Control.
-
-- **Video + touch LoRA** (`tactile_lora_*`, 10-21 to 10-23): one canvas holds the head-camera video and a touch panel drawn as pixels (superseded by the value head of `2026-10-24`). The runs compare training on mixed real + simulation-generated rows with training on real rows only, and use held-out twin clips.
-- **Dual-mode LoRA** (`dual_mode_lora`): one LoRA that generates video and touch from simulation, and also estimates touch from a given video. The inpaint mask chooses the task.
-- **Diagnostics:** the loss table for the touch regression head, the inference-setting diagnosis, the depth-control ablation, and touch estimation on released videos.
-- **HF25 control comparison** (`2026-10-24/`, branch `for-amir`): three video + touch LoRAs on the 25 pairs of the public release
-  [tracyhan816/mug-sim2video-pose-tactile](https://huggingface.co/datasets/tracyhan816/mug-sim2video-pose-tactile), differing only
-  in the control video (FHN: scene depth + simulated hand / mug; SVO: simulation render only; CDS: cube-scene depth + render). The
-  touch is a value array output by a small head on the diffusion transformer's tokens (no pixel panel), normalised per replay.
-  Self-contained: the runbook [`experiments/finetune/2026-10-24/README.md`](experiments/finetune/2026-10-24/README.md) links every
-  download (weights on Hugging Face, the VideoX-Fun commit, the prepared training set
-  [tracyhan816/mug-video-touch-lora-hf25](https://huggingface.co/datasets/tracyhan816/mug-video-touch-lora-hf25)), `setup.sh`
-  installs the environment (`env/requirements.txt`) and fetches everything, `train.sh` trains and evaluates. Start there
-  (or at [`AGENTS.md`](AGENTS.md)).
-
-## Dependencies
-
-The scripts expect:
-- [VideoX-Fun](https://github.com/aigc-apps/VideoX-Fun) (Apache-2.0) and the Wan2.2-Fun-A14B-Control weights;
-- the TouchScale data.
-
-Some scripts patch a copy of the VideoX-Fun LoRA trainer at run time (for example `make_trainer.py`); the trainer itself is not included. The 2026-10-24 experiment is portable (root via the `R2S2R` environment variable, `setup.sh` does the installation); the older experiment folders are records of runs on the authors' cluster and keep that cluster's paths. Model weights, datasets and outputs are not in this repository.
+Model weights, datasets and outputs are not in this repository.

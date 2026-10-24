@@ -1,7 +1,7 @@
 # HF25 on the authors' cluster (internal notes)
 
 Workspace root `R = /scratch/project/prj-02-phai-lab/nuo/agentic-r2s2r` (`train.sh` picks it up when it exists; `launch.sh`
-exports it). Everything of §2 of the runbook is already in place there: weights `$R/models/Wan2.2-Fun-A14B-Control`, VideoX-Fun
+exports it). Everything of §2 of the runbook is already in place there: weights `$R/models/W` (a symlink to the lab's copy of the same weights), VideoX-Fun
 `$R/third_party/VideoX-Fun` (patched, trainer copy generated), envs `$R/envs/videoxfun` + `$R/envs/armA`, raw release
 `$R/data/mug-sim2video-pose-tactile`, training set `$R/outputs/R2S2V_mug/hf25/dataset` (+ `hf25_dataset_v2.tar.gz`, the upload
 to Hugging Face minus `test/simtouch`).
