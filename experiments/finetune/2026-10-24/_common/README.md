@@ -32,9 +32,11 @@ runs them (downloads, layout, dataset build, launch, monitoring, eval): [../READ
 - **Normalisation (new vs F / H).** F / S with S = median total force over frames with total > 1 N of the row's replay (81
   frames = the whole 5 s window); head target u = min(F / S, 0.11) / 0.11 (the loss-table target). F / H used absolute N.
 - **Touch loss.** R1 of the loss table (Huber + 1/2 L1, active taxels x10; TouchSight) — the best contact F1 there.
-- **Prompts** (`prompts.py`): one shared action sentence + one visual-feature sentence where the video has one (water in the
-  mug, claw grip, rim pinch, shake, very fast) + the touch sentence. 9 rows (recorded / grip 30 % / friction x0.5) get the
-  shared prompt alone. Scene, view and hand look are not described: the first frame carries them.
+- **Prompts** (`prompts.py`, v2 since 10-25): one shared task instruction + ONE quantitative clause per perturbation / grasp (30 % grip,
+  friction x0.5, 300 g water, 10x speed, 6 cm at 4 Hz, claw, rim pinch), the same numbers as a `params` dict; no touch-panel sentence.
+  Scene, view and hand look are not described: the first frame carries them. The 10-24 FHN runs used v1 (qualitative + panel sentence).
+- **Action-model view** (`build_vtla.py`, 10-25): `action/<id>.npz` (31-D hand state per frame + 880-D tactile), `metadata_vtla.json`,
+  `PROMPTS.md`; see the runbook §4.
 - **Training** (`train.sh`, = F / H `run_lora.sh`): rank 64 / alpha 32, lr 1e-4 constant, batch 1, first-frame-only inpaint
   mask (frame 0 known), control_ref + first_frame, 500 steps per expert (= 20 passes per row), checkpoint every 50 (multiples
   of 100 kept, head saved with each). ~45 s/step on an H200 -> ~6.5 h per expert; a pool allocation (4 h) ends mid-run and
@@ -80,7 +82,7 @@ prompt); see the runbook's status for what is planned.
 
 ## Files
 Runbook for whoever runs it: [../README.md](../README.md) (downloads, layout, dataset build, launch, monitoring, eval).
-`fetch_hf.sh` · `build_hf25.py` (+ checks -> dataset/check.json) · `prompts.py` · `hf25_patch.py` (head, loss, dataset) ·
+`fetch_hf.sh` · `build_hf25.py` (+ checks -> dataset/check.json) · `build_vtla.py` (action-model view) · `prompts.py` · `hf25_patch.py` (head, loss, dataset) ·
 `make_trainer_hf25.py` (-> VideoX-Fun `train_control_lora_hf25.py`) · `train.sh` (parts) · `launch.sh` (pool loops, eval waiter) ·
 `predict_hf25.py` · `regr_hf25.py` · `score_hf25.py` · `videoxfun_patches/` (the two VideoX-Fun trainer patches) · `w_pipe.py` (portable pipeline loader) · `../setup.sh` + `../env/` · `smoke_tiny.sh` / `launch_smoke.sh`
 (tiny-model trainer test, one card, ~3 min; PASSED 10-24 after a dtype fix) · `release_cases.json` · `mac/twin_cubes.sh`.

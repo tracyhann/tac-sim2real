@@ -65,6 +65,13 @@ $R2S2R/
 Manual equivalent: the steps above one by one; the scripts only need `R2S2R` exported (`PY=<python>` overrides the env path).
 
 ## 4. The data
+**Prompts v2 and the action-model view (2026-10-25).** Every row's `text` is the shared task instruction plus ONE quantitative clause for its
+perturbation or grasp (e.g. "shake the mug side to side, about 6 cm at 4 Hz"; "10 times the recorded speed"; "300 g extra"); the same
+numbers are in `params`. `action/<id>.npz` holds the hand state per frame (wrist xyz + rot6d + 22 finger joints = 31-D) and the
+tactile vector (880, baseline-subtracted, plus the relative version) — the format a vision-tactile-language-action model consumes
+(state in, action chunk out, future tactile change as auxiliary target); `metadata_vtla.json` lists every modality per row and
+`PROMPTS.md` is the review table. The FHN LoRA runs of 10-24 were trained with prompts v1 (qualitative feature sentence + a
+touch-panel sentence); any new run uses v2.
 Use the prepared training set as is; `setup.sh` downloads it. Its card lists every file and format. In short: 25 rows, each a
 released video (832 x 480, 81 frames, 16 fps) + its first frame + a touch npz (`touch` N, `S`, `touch_rel`, `u`, `t`) + three control
 videos; `metadata_<ARM>.json` are the three training manifests (identical except `control_file_path`); `test_cases.json` + `test/`
