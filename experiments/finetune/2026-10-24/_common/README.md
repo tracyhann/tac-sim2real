@@ -60,6 +60,24 @@ and on the held-out twins' control.
   trained on the same 25 pairs applied to each arm's generated video (`regr_hf25.py`: "video + external estimator" vs "own
   head"), frame-0 touch repeated, twin sim touch, dual-mode G epoch 8, h2 step 600 (absolute, r only), zero-shot / real video IoU.
 
+## Results so far (FHN; held-out twins, mean of 2 clips; `eval/table.md`, v1 in `eval/table_v1_head.md`)
+| start -> target | method | mug / hand IoU | F1@6mm | total r | total MAE (S) | release (ms) |
+|---|---|---|---|---|---|---|
+| real frame 0 -> real touch | FHN head v1 | 0.62 / 0.26 | 0.40 | 0.71 | 0.91 | 875 |
+| real frame 0 -> real touch | **FHN head v2** | 0.65 / 0.27 | 0.31 | **0.82** | **0.26** | **94** |
+| real frame 0 -> real touch | R6 regressor on the same generated video | - | 0.29 | 0.79 | 0.26 | 188 |
+| real frame 0 -> real touch | frame-0 touch repeated | - | 0.65 | - | 0.42 | 875 |
+| real frame 0 -> real touch | zero-shot W (video only) | 0.81 / 0.37 | - | - | - | - |
+| generated frame 0 -> sim touch | FHN head v2 | 0.65 / 0.26 | 0.43 | 0.79 | 0.28 | 156 |
+| generated frame 0 -> sim touch | R6 regressor on the same generated video | - | 0.44 | 0.74 | 0.23 | 188 |
+v2 fixed the magnitude and the release (now at the level of the external regressor on the force course) but contact LOCATION is still
+below "frame-0 touch repeated" (F1@6mm) and the load share got worse (share TV 0.31 vs 0.16). Video adherence is unchanged by the
+head and below zero-shot, as in every LoRA so far.
+**Design caveat (user, 10-24 evening):** with a simulation-derived control, predicting the touch is circular - the labels are that
+simulation's own touch - so the touch half of the FHN / SVO / CDS comparison is not informative; only the video half is. The arms
+that make the touch meaningful give the model no simulation at inference (scene depth only, or nothing but the first frame and the
+prompt); see the runbook's status for what is planned.
+
 ## Files
 Runbook for whoever runs it: [../README.md](../README.md) (downloads, layout, dataset build, launch, monitoring, eval).
 `fetch_hf.sh` · `build_hf25.py` (+ checks -> dataset/check.json) · `prompts.py` · `hf25_patch.py` (head, loss, dataset) ·

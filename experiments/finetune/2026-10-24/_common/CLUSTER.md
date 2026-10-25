@@ -29,4 +29,4 @@ _common/code/build_hf25.py` (CPU, ~10 min; needs the sim renders under `outputs/
 from `mac/twin_cubes.sh`).
 
 **Runs.** FHN_high + FHN_low (head v1) trained 10-24 08:37-13:11, evaluated 14:24 (`eval/table_v1_head.md`, outputs `out_v1/`,
-run dir `FHN_low_v1`); FHN_low retrained with head v2 from 10-24 ~15:10 (`FHN/code/launch.sh` again; FHN_high reused).
+run dir `FHN_low_v1`); FHN_low retrained with head v2 from 10-24 ~15:10 (`FHN/code/launch.sh` again; FHN_high reused). FHN_low v2 done 19:47, ev_FHN_500 done 20:54 (table = eval/table.md).
