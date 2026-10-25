@@ -148,6 +148,13 @@ not be attributable to a specific model.
   on the next start and resumes from the previous pair.
 - `expected scalar type Float but found BFloat16` or a shape assert in `hf25_patch.py`: the trainer copy is stale — rerun
   `python _common/code/make_trainer_hf25.py $R2S2R/third_party/VideoX-Fun`.
-- The trainer imports `tensorboard`, `decord`, `av`; `setup.sh` installs them. CUDA OOM on < 80 GB cards: not supported as configured.
+- `ImportError: cannot import name 'BucketNotFoundError' from 'huggingface_hub.errors'` at the start of training: the environment got
+  `datasets >= 5.1` (needs `huggingface_hub >= 1.31`, which `transformers 4.56` forbids). Fixed 2026-10-24: `setup.sh` now installs
+  `env/requirements-lock.txt` (the exact reference environment) and pins `datasets==5.0.1`; `git pull` and re-run `setup.sh` — it
+  repairs an existing env in place. `pip`'s "dependency conflicts" lines about gradio and "decord 0.6.0 is not supported on this
+  platform" are warnings only (gradio is never imported; decord's wheel metadata is wrong but the module works).
+- The trainer imports `tensorboard`, `decord`, `av`; `setup.sh` installs them and checks every unconditional import of the trainer at
+  the end. pip's cache and build temp go under `$R2S2R/cache/` so a small home-directory quota cannot break wheel builds.
+- CUDA OOM on < 80 GB cards: not supported as configured.
 - `_common/code/smoke_tiny.sh` (trainer smoke test on a tiny stand-in network) is wired to the authors' cluster; see CLUSTER.md.
 - Authors' cluster specifics (job pool, log locations, launchers): [_common/CLUSTER.md](_common/CLUSTER.md).

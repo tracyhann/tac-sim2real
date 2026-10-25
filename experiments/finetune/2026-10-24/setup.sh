@@ -16,7 +16,8 @@ VXF_COMMIT=13bb3c625e8b1e457d7124d92207b49e00e4a6fe
 WEIGHTS_REPO=latent-artist/861b8a78d34141a9ad659229049b6423
 DATASET_REPO=tracyhan816/mug-video-touch-lora-hf25
 RAW_REPO=tracyhan816/mug-sim2video-pose-tactile; RAW_REV=6cf129c769161eec04b5566a903163913b75ca33
-mkdir -p $R/third_party $R/envs $R/models $R/outputs/R2S2V_mug/hf25 $R/data $R/cache/huggingface; export HF_HOME=${HF_HOME:-$R/cache/huggingface}
+mkdir -p $R/third_party $R/envs $R/models $R/outputs/R2S2V_mug/hf25 $R/data $R/cache/huggingface $R/cache/pip $R/cache/tmp
+export HF_HOME=${HF_HOME:-$R/cache/huggingface} PIP_CACHE_DIR=${PIP_CACHE_DIR:-$R/cache/pip} TMPDIR=${TMPDIR:-$R/cache/tmp}   # keep pip / wheel builds off a small home quota
 
 echo "== 1/6 VideoX-Fun @ $VXF_COMMIT"
 V=$R/third_party/VideoX-Fun
@@ -33,9 +34,14 @@ if [ ! -x $PY ]; then
 fi
 $PY -m pip --version > /dev/null 2>&1 || $PY -m ensurepip --upgrade > /dev/null 2>&1 || uv pip install --python $PY pip   # uv venvs ship without pip
 $PY -m pip install -q --upgrade pip
-$PY -m pip install -q -r $V/requirements.txt
-$PY -m pip install -q -r $HERE/env/requirements.txt
-$PY -c "import torch, diffusers, peft, accelerate, transformers, av, decord, cv2, imageio, tensorboard; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), '| diffusers', diffusers.__version__, 'peft', peft.__version__)"
+if $PY -m pip install -q -r $HERE/env/requirements-lock.txt; then           # the exact reference environment (preferred)
+  echo "installed env/requirements-lock.txt"
+else                                                                        # fallback: the framework's requirements + our pins
+  echo "lock install failed on this platform: installing VideoX-Fun requirements + env/requirements.txt"
+  $PY -m pip install -q -r $V/requirements.txt; $PY -m pip install -q -r $HERE/env/requirements.txt
+fi
+$PY -m pip install -q -r $HERE/env/requirements.txt                         # enforce the key pins in either path (no-op after the lock)
+$PY -c "import torch, diffusers, peft, accelerate, transformers, datasets, huggingface_hub, av, decord, cv2, imageio, tensorboard, einops, omegaconf, safetensors, timm; print('torch', torch.__version__, 'cuda', torch.cuda.is_available(), '| diffusers', diffusers.__version__, 'peft', peft.__version__, 'datasets', datasets.__version__, 'hub', huggingface_hub.__version__)"
 HF=$R/envs/videoxfun/bin/hf
 
 echo "== 3/6 backbone weights (model W) -> $R/models/W"
@@ -67,6 +73,18 @@ $PY -m py_compile $V/scripts/wan2.2_fun/train_control_lora_hf25.py
 echo "== 6/6 checks"
 CUDA_VISIBLE_DEVICES= $PY $C/hf25_patch.py | tail -1
 cd $V && $PY -c "import videox_fun, sys; sys.path.insert(0, 'scripts/wan2.2_fun'); import hf25_patch; print('videox_fun + hf25_patch import ok')"
+cd $V && $PY -c "
+import ast, importlib, sys
+src = open('scripts/wan2.2_fun/train_control_lora_hf25.py').read(); mods = set()
+for n in ast.parse(src).body:                                   # unconditional module-level imports only (optional ones sit in try / if / functions)
+    if isinstance(n, ast.Import): mods |= {a.name.split('.')[0] for a in n.names}
+    elif isinstance(n, ast.ImportFrom) and n.level == 0 and n.module: mods.add(n.module.split('.')[0])
+sys.path.insert(0, 'scripts/wan2.2_fun'); bad = []
+for m in sorted(mods - {'videox_fun', 'hf25_patch'}):
+    try: importlib.import_module(m)
+    except Exception as e: bad.append((m, str(e)[:80]))
+print('trainer imports:', len(mods), 'modules,', 'all ok' if not bad else bad); sys.exit(1 if bad else 0)
+"   # every top-level import of the trainer resolves (the datasets / huggingface_hub mismatch of 2026-10-24 surfaced only at train time)
 cat <<EOF
 
 Setup done. Next (one GPU each, any order; re-run a part until it exits 0):
