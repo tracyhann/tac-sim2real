@@ -61,6 +61,10 @@ def load_frames(video: Path, cache: Path | None) -> np.ndarray:
 
 
 def policy_prompt(row, mode="observable"):
+    """rows with text_priv (prompts v3: batch 2 on) carry both: text = instruction + observable / commanded quantities,
+    text_priv = + mass and friction; older rows carry the full text only, so their observable prompt is rebuilt from params"""
+    if row.get("text_priv"):
+        return row["text_priv"] if mode == "full" else row["text"]
     if mode == "full":
         return row["text"]
     p = dict(_DEFAULT, **{k: v for k, v in (row.get("params") or {}).items() if k in _DEFAULT or k == "shake_axis"})

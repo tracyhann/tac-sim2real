@@ -13,7 +13,8 @@ Per video frame (81 at 16 fps; the replay is sampled at the frame's simulation t
   f_cmd, f_sim (81, 6)  per part (thumb, index, middle, ring, little, palm) the force target the grip controller tracks and the
                      simulated normal force (Fsim), N. The replay records the UNSCALED glove force (Ftgt, = f_glove); the
                      grip_scale counterfactual multiplies the target by s after that record (its gate hook; the carry floor is 0
-                     in these configs), so f_cmd = s x Ftgt with s = the row's params grip_scale (1 elsewhere).
+                     in these configs), so f_cmd = s x Ftgt with s = the row's params grip_scale for those rows; the finger batch
+                     (jitter_fg) scales the glove program before the record, so its Ftgt already is the command (s = 1).
                      grip force (act_vtf[:, 9]) = sum of f_cmd over the loaded fingers.
   closure  = the CLOSE_W-weighted mean flexion of the 5 fingers' closing joints (rad, measured) - the kinematic gripper analogue.
   tactile  (81, 880) the row's glove touch (N, = tactile/<id>.npz touch), t (81,) video time, loaded (5,) bool.
@@ -75,7 +76,10 @@ def build_row(ds, row, cases):
     t = rp["t"]; ck["t_sim_in_replay"] = bool(ts[0] >= t[0] - 0.02 and ts[-1] <= t[-1] + 0.02); ck["loaded"] = loaded
     at = lambda a: np.stack([np.interp(ts, t, a[:, k]) for k in range(a.shape[1])], 1)      # noqa: E731  (holds the end values outside)
     delta, pulp, f_glove, f_sim = at(rp["delta"]), at(rp["pulp"]), at(rp["Ftgt"]), at(rp["Fsim"])
-    s_grip = float((row.get("params") or {}).get("grip_scale", 1.0)); f_cmd = s_grip * f_glove; ck["grip_scale"] = s_grip
+    # grip_scale counterfactuals scale the target AFTER the record (gate hook); the finger batch (kind jitter_fg) scales the glove
+    # program BEFORE it (fill_glove_gaps hook: hold_scale x per-finger factor), so its Ftgt is already the command
+    s_grip = float((row.get("params") or {}).get("grip_scale", 1.0)) if row.get("kind") in (None, "grip_scale") else 1.0
+    f_cmd = s_grip * f_glove; ck["grip_scale_applied"] = s_grip
     q_cmd = q.copy()
     for f in loaded:
         k = FINGERS.index(f)
