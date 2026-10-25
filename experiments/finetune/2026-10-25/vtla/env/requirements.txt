@@ -1,0 +1,2 @@
+# Extras on top of N0-VTLA's pinned requirements.txt (installed by setup.sh). Video decoding uses PyAV (already pinned there).
+av>=14
