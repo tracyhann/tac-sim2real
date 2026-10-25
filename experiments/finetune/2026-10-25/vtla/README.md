@@ -143,10 +143,10 @@ only the image is swapped; the paper reports about 0.9 vs 0.2).
 
 ## 8. Files
 
-`setup.sh`, `smoke.sh`, `env/requirements.txt`, `assets/glove_taxels.json` (pad of each taxel), `code/`:
+`setup.sh`, `smoke.sh`, `runs_abcde.sh`, `env/requirements.txt`, `assets/glove_taxels.json` (pad of each taxel), `code/`:
 `taxel_encoder.py` (grid and mlp glove encoders + the frozen target features), `vtla_model.py` (GloveVTLA, weight loading, stages),
-`vtla_data.py` (samples, normalisation, prompts), `train_vtla.py`, `eval_vtla.py`, `test_vtla.py`, `build_vtla_labels.py`
-(authors only).
+`vtla_data.py` (samples, normalisation, prompts), `train_vtla.py`, `eval_vtla.py`, `test_vtla.py`, `make_split.py`,
+`build_vtla_labels.py` (authors only).
 
 ## 9. Results
 
@@ -178,3 +178,32 @@ if it stays near 0 after a full pred stage, the tactile path is not being used. 
 the policy is still worse than repeating the current action, and z hardly depends on the touch yet (z_shift_touch 0.008):
 these numbers only show that the losses go down, nothing about the arms. Real runs need the expanded dataset and the step
 counts of section 5.
+
+## 10. Comparison runs A-E (priority set, 2026-10-25)
+
+| run | action | touch | stages | answers |
+|---|---|---|---|---|
+| A | VTS (measured state) | yes | pred 1k, align 1k, joint 6k | the recipe as is |
+| B | VTF (commanded joints + grip force) | yes | same | H1: does a force-informed action hold the mug |
+| C | VTS | no (null token, trained and tested without the glove) | align 1k, joint 6k | H2: what touch adds |
+| D | VTF | no | same as C | H2 for the force action; A-D is a 2 x 2 design (action x touch) |
+| E | VTF | yes | align 1k, joint 6k (no pred stage) | H3: does the Stage-1 grounding make z use the touch |
+
+```bash
+R2S2R=/data/r2s2r bash runs_abcde.sh B        # one GPU per run, about 4-5 h each; A-E in parallel on 5 GPUs
+```
+
+- Hypotheses: H1 B keeps the mug in hand when its chunks are executed in the simulator more often than A, even at similar
+  joint errors; H2 touch helps mostly within 0.5 s of contact onset and release; H3 without the pred stage z ignores the touch
+  (z_shift_touch near 0) and the gain of H2 shrinks; H4 (leak check) if B's grip force is no better than "the current total
+  touch", it copied the touch.
+- Held-out rows (`code/make_split.py` -> `vtla/heldout.txt`): every row of four unseen conditions (lateral shake 40 mm at 4 Hz,
+  grip 40 %, 300 g of water with friction x 0.5, the claw posture), where command and outcome part, plus the jitter seeds that
+  are multiples of 10 (near duplicates: the easy check). Whole rows only: neighbouring frames of one clip are near copies.
+- Batch 32, validation every 500 steps on the held-out rows (fixed noise and flow time), `<out>/best` = best joint-stage
+  checkpoint by held-out action loss; eval on `final` and `best`.
+- Metrics: open-loop wrist / joint / slot-9 errors against "repeat the current action" and, for VTF, against "grip = current
+  total touch"; errors split into contact-transition windows and steady phases; z probes; confidence intervals by bootstrapping
+  rows (frames of a row are correlated). Planned: the physics check (execute a predicted 1 s chunk in the simulator from the
+  replay's state at t; held = slip < 5 mm and no drop), first with the ground-truth actions of each arm as an oracle.
+- Limits: mass cannot be tested with this data (the replay's grip does not respond to the load); two source clips only.

@@ -48,21 +48,21 @@ def main():
     ap.add_argument("--stride", type=int, default=8); ap.add_argument("--batch", type=int, default=16); ap.add_argument("--steps", type=int, default=10)
     ap.add_argument("--device", default="cuda"); ap.add_argument("--cache", default=None); ap.add_argument("--out", default=None); ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args(); ck = Path(a.ckpt); run = json.loads((ck / "run.json").read_text()); norm = D.Norm.load(ck / "norm_stats.json")
-    arm, H, dev = norm.d["arm"], int(norm.d["horizon"]), torch.device(a.device)
+    arm, H, dev = norm.d["arm"], int(norm.d["horizon"]), torch.device(a.device); no_touch = bool(run.get("args", {}).get("no_touch", False))
     ids = a.ids or norm.d.get("val_ids") or None; rows = D.load_rows(Path(a.data), set(ids) if ids else None)
     data = D.GloveChunks(Path(a.data), rows, arm, H, norm, prompt=norm.d.get("prompt", "observable"), cache=a.cache, starts=range(0, D.N - 1, a.stride))
     cfg = M.make_config(H, dummy=run.get("dummy", False), dtype="float32" if dev.type == "cpu" else "bfloat16")
     model = M.build_model(cfg, dev, encoder=run.get("args", {}).get("tactile_encoder", "mlp")); rep = M.load_weights(model, str(ck / "model.safetensors")); model.eval()
     g = torch.Generator(device="cpu").manual_seed(a.seed); P, G, V, S9, Z, ZT, ZI, TG, per_row = [], [], [], [], [], [], [], [], {}
     for k0 in range(0, len(data), a.batch):
-        items = [data[k] for k in range(k0, min(k0 + a.batch, len(data)))]; b = D.collate(items); obs, _act, tdel = D.to_obs(b, dev)
+        items = [data[k] for k in range(k0, min(k0 + a.batch, len(data)))]; b = D.collate(items); obs, _act, tdel = D.to_obs(b, dev, drop_touch=no_touch)
         noise = torch.randn((len(items), H, 32), generator=g).to(dev)
         with torch.no_grad():
             x = model.sample_actions(dev, obs, noise=noise, num_steps=a.steps).float().cpu().numpy()
-            z = model.latent(D.to_obs(b, dev)[0]).float().mean(1)
+            z = model.latent(D.to_obs(b, dev, drop_touch=no_touch)[0]).float().mean(1)
             sh = np.roll(np.arange(len(items)), 1)
-            zt = model.latent(D.to_obs(b, dev, tactile=b["tactile"][sh])[0]).float().mean(1)
-            bi = dict(b); bi["image"] = b["image"][sh]; zi = model.latent(D.to_obs(bi, dev)[0]).float().mean(1)
+            zt = z if no_touch else model.latent(D.to_obs(b, dev, tactile=b["tactile"][sh])[0]).float().mean(1)
+            bi = dict(b); bi["image"] = b["image"][sh]; zi = model.latent(D.to_obs(bi, dev, drop_touch=no_touch)[0]).float().mean(1)
             tg, _ = model.target_features(tdel)
         Z.append(z.cpu()); ZT.append(zt.cpu()); ZI.append(zi.cpu()); TG.append(tg.cpu())
         for j, it in enumerate(items):

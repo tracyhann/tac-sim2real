@@ -180,8 +180,9 @@ class GloveObs:
         return dataclasses.replace(self, **kw)
 
 
-def to_obs(b, device, tactile=None):
-    """batch (numpy) -> (GloveObs, actions, tac_delta) on device. tactile overrides the glove input (probes)."""
+def to_obs(b, device, tactile=None, drop_touch=False):
+    """batch (numpy) -> (GloveObs, actions, tac_delta) on device. tactile overrides the glove input (probes); drop_touch leaves
+    the glove out entirely (no-touch arms: the repo's predictor then uses its learned null token instead of g)."""
     B = len(b["state"])
     img = torch.from_numpy(b["image"]).to(device).permute(0, 3, 1, 2).float() / 127.5 - 1.0
     zero = torch.zeros_like(img); on = torch.ones(B, dtype=torch.bool, device=device); off = torch.zeros(B, dtype=torch.bool, device=device)
@@ -190,4 +191,7 @@ def to_obs(b, device, tactile=None):
                    image_masks={"base_0_rgb": on, "left_wrist_0_rgb": off, "right_wrist_0_rgb": off.clone(), TACTILE_KEY: on.clone()},
                    state=torch.from_numpy(b["state"]).to(device), tokenized_prompt=torch.from_numpy(b["tokens"]).to(device),
                    tokenized_prompt_mask=torch.from_numpy(b["token_mask"]).to(device))
+    if drop_touch:
+        for k in (TACTILE_KEY, TACTILE_KEY + ".baseline"):
+            obs.images.pop(k); obs.image_masks.pop(k, None)
     return obs, torch.from_numpy(b["actions"]).to(device), torch.from_numpy(b["tac_delta"]).to(device)

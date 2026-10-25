@@ -2,6 +2,9 @@
   pred   tactile stack only (encoder, predictor, recon head) on aux_loss (InfoNCE z vs z* + per-pad L1); policy frozen
   align  z_proj, z gate, action expert on the action loss; action queries cannot see the VL prefix (only z)
   joint  everything on the action loss (+ --aux_weight x aux_loss), tactile stack and z_proj at 0.1 x lr
+Comparison runs (README section 10): A = vts, B = vtf, C = vts --no_touch, D = vtf --no_touch (no pred stage), E = vtf with
+the pred stage skipped (the paper's free-latent variant). --val_every evaluates the held-out rows (fixed noise and flow time,
+so the numbers are comparable across steps and runs) and keeps the best joint-stage checkpoint in <out>/best.
 Arms (only the action target differs; inputs, data, steps and seeds are the same):
   vts  action = measured state chunk  [wrist xyz, rot6d, closure, 22 measured joints]
   vtf  action = force-informed chunk  [wrist xyz, rot6d, total commanded grip force, 22 commanded joints]
@@ -54,8 +57,11 @@ def main():
     ap.add_argument("--no_grad_ckpt", action="store_true"); ap.add_argument("--max_rows", type=int, default=0)
     ap.add_argument("--save", choices=("all", "last"), default="all", help="save every stage (~7 GB each) or only the last")
     ap.add_argument("--tactile_encoder", choices=("grid", "mlp"), default="grid", help="glove encoder: spatial grid (default) or the per-pad MLP")
+    ap.add_argument("--no_touch", action="store_true", help="train and evaluate without the glove (predictor gets its null token)")
+    ap.add_argument("--val_every", type=int, default=500); ap.add_argument("--val_max", type=int, default=256, help="held-out samples per evaluation")
+    ap.add_argument("--val_stride", type=int, default=4)
     a = ap.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", force=True)   # n0vtla configures logging on import
     random.seed(a.seed); np.random.seed(a.seed); torch.manual_seed(a.seed)
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True); dev = torch.device(a.device)
     ds = Path(a.data); rows = D.load_rows(ds); rows = rows[:a.max_rows] if a.max_rows else rows
@@ -65,6 +71,15 @@ def main():
     dl = torch.utils.data.DataLoader(data, batch_size=a.batch, shuffle=True, drop_last=len(data) >= a.batch, num_workers=a.workers, collate_fn=D.collate,
                                      persistent_workers=a.workers > 0)
     logging.info("arm %s: %d train rows (%d samples), %d val rows; tactile scale %.3f N; prompt[0] %r", a.arm, len(tr), len(data), len(va), norm.tac, data.prompts[0])
+    stages_ = [s.split(":")[0] for s in a.stages.split(",") if s]
+    assert not (a.no_touch and ("pred" in stages_ or a.aux_weight > 0)), "--no_touch has no tactile target: drop the pred stage and aux_weight"
+    val = None
+    if va and a.val_every > 0:
+        vd = D.GloveChunks(ds, va, a.arm, a.horizon, norm, prompt=a.prompt, cache=a.cache, starts=range(0, D.N - 1, a.val_stride))
+        rng = np.random.default_rng(1234); pick = rng.permutation(len(vd))[:a.val_max]; vb = [D.collate([vd[int(k)] for k in pick[i:i + a.batch]]) for i in range(0, len(pick), a.batch)]
+        g = torch.Generator().manual_seed(4321)
+        val = [(b, torch.randn(len(b["state"]), a.horizon, 32, generator=g), torch.rand(len(b["state"]), generator=g) * 0.998 + 0.001) for b in vb]
+        logging.info("validation: %d held-out samples from %d rows", len(pick), len(va))
     cfg = M.make_config(a.horizon, dummy=a.dummy, dtype="float32" if dev.type == "cpu" else "bfloat16")
     model = M.build_model(cfg, dev, encoder=a.tactile_encoder); report = None
     if a.init:
@@ -73,7 +88,21 @@ def main():
         report = M.load_weights(model, str(Path(a.base) / "model.safetensors"))
     if not a.no_grad_ckpt and not a.dummy:
         model.gradient_checkpointing_enable()
-    model.train(); logf = (out / "log.jsonl").open("a"); step_total = 0
+    def evaluate(stage):
+        model.eval(); act, aux, top1, shift = [], [], [], []
+        with torch.no_grad():
+            for b, noise, tm in val:
+                obs, actions, tdel = D.to_obs(b, dev, drop_touch=a.no_touch)
+                if stage != "pred":
+                    act.append(float(model(obs, actions, noise=noise.to(dev), time=tm.to(dev)).mean()))
+                if not a.no_touch:
+                    l_, p_ = model.aux_loss(obs, tdel); aux.append(float(l_)); top1 += [p_["top1"]] if "top1" in p_ else []
+                    z = model.latent(D.to_obs(b, dev)[0]).float().mean(1); zs = model.latent(D.to_obs(b, dev, tactile=b["tactile"][np.roll(np.arange(len(b["tactile"])), 1)])[0]).float().mean(1)
+                    shift.append(float((1 - torch.nn.functional.cosine_similarity(z, zs)).mean()))
+        model.train(); f = lambda v: float(np.mean(v)) if v else None   # noqa: E731
+        return dict(val_act=f(act), val_aux=f(aux), val_top1=f(top1), val_z_shift_touch=f(shift))
+
+    model.train(); logf = (out / "log.jsonl").open("a"); step_total = 0; best = float("inf")
     stages = [(s.split(":")[0], int(s.split(":")[1])) for s in a.stages.split(",") if s]
     for stage, n_steps in stages:
         groups = M.set_stage(model, stage); peak = dict(pred=a.lr_pred, align=a.lr_align, joint=a.lr_joint)[stage]; model.zero_grad(set_to_none=True)
@@ -85,7 +114,7 @@ def main():
                 b = next(it)
             except StopIteration:
                 it = iter(dl); b = next(it)
-            obs, actions, tac_delta = D.to_obs(b, dev)
+            obs, actions, tac_delta = D.to_obs(b, dev, drop_touch=a.no_touch)
             for g in opt.param_groups:
                 g["lr"] = lr_at(s, n_steps, peak, min(a.warmup, n_steps // 5)) * g.get("lr_scale", 1.0)
             parts = {}
@@ -108,6 +137,11 @@ def main():
                 logging.info("%s %4d/%d loss %.4f (mean10 %.4f) gn %.2f lr %.2e %s | %.2f s/step, %.1f GB", stage, s, n_steps, rec["loss"], float(np.mean(hist[-10:])), rec["grad_norm"], rec["lr"],
                              {k: round(v, 4) if isinstance(v, float) else v for k, v in parts.items()}, (time.time() - t0) / (s + 1), mem)
                 logf.flush()
+            if val is not None and ((s + 1) % a.val_every == 0 or s == n_steps - 1):
+                ev = evaluate(stage); logf.write(json.dumps(dict(stage=stage, step=s, total=step_total, val=True, **ev)) + "\n"); logf.flush()
+                logging.info("val %s %d: %s", stage, s + 1, {k: (round(v, 4) if v is not None else None) for k, v in ev.items()})
+                if stage == "joint" and ev["val_act"] is not None and ev["val_act"] < best:
+                    best = ev["val_act"]; save(model, out / "best", norm, dict(arm=a.arm, stage=stage, steps=s + 1, args=vars(a), weights_report=report, val=ev, dummy=a.dummy))
         if a.save == "all" or (stage, n_steps) == stages[-1]:
             save(model, out / stage, norm, dict(arm=a.arm, stage=stage, steps=n_steps, args=vars(a), weights_report=report, first10=float(np.mean(hist[:10])), last10=float(np.mean(hist[-10:])),
                                                 sec_per_step=(time.time() - t0) / max(n_steps, 1), dummy=a.dummy))
