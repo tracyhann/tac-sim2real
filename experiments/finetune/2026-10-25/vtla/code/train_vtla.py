@@ -53,6 +53,7 @@ def main():
     ap.add_argument("--dummy", action="store_true"); ap.add_argument("--device", default="cuda"); ap.add_argument("--log_every", type=int, default=10)
     ap.add_argument("--no_grad_ckpt", action="store_true"); ap.add_argument("--max_rows", type=int, default=0)
     ap.add_argument("--save", choices=("all", "last"), default="all", help="save every stage (~7 GB each) or only the last")
+    ap.add_argument("--tactile_encoder", choices=("grid", "mlp"), default="grid", help="glove encoder: spatial grid (default) or the per-pad MLP")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     random.seed(a.seed); np.random.seed(a.seed); torch.manual_seed(a.seed)
@@ -65,7 +66,7 @@ def main():
                                      persistent_workers=a.workers > 0)
     logging.info("arm %s: %d train rows (%d samples), %d val rows; tactile scale %.3f N; prompt[0] %r", a.arm, len(tr), len(data), len(va), norm.tac, data.prompts[0])
     cfg = M.make_config(a.horizon, dummy=a.dummy, dtype="float32" if dev.type == "cpu" else "bfloat16")
-    model = M.build_model(cfg, dev); report = None
+    model = M.build_model(cfg, dev, encoder=a.tactile_encoder); report = None
     if a.init:
         report = M.load_weights(model, str(Path(a.init) / "model.safetensors"))
     elif a.base:

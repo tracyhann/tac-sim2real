@@ -6,8 +6,8 @@ the paper's predictor objective added.
              (predictor_arch "tactile_kv": g is the only key/value, the VL prefix only conditions the queries) -> n_latent = 5
              latent tokens z -> z_proj -> zero-initialised gate -> prepended to the action suffix (actions attend z and the
              prefix; the prefix never sees z; z positions are sliced off before the action head).
-  swap       tactile_encoder = TaxelTactileEncoder (glove values -> 16 tokens) instead of the frozen DINOv2 over optical
-             tactile images. Everything else, incl. the pretrained predictor / z_proj / z_gate weights, loads from the
+  swap       tactile_encoder = a glove encoder (taxel_encoder.ENCODERS: "grid" = spatial, the default; "mlp" = the first
+             version) giving 16 tokens instead of the frozen DINOv2 over optical tactile images. Everything else, incl. the pretrained predictor / z_proj / z_gate weights, loads from the
              N0-VTLA base checkpoint (NeoteAI/n0-vtla-base).
   added      aux_loss = the paper's Stage-1 predictor grounding, which the repo does not ship: symmetric InfoNCE between the
              pooled z and z* = f_enc(tac_{t+H} - tac_t) over the batch (f_enc = GloveTargetFeatures, frozen) + an L1
@@ -32,7 +32,7 @@ import n0vtla.models_pytorch.gemma_pytorch as _gp
 import n0vtla.models_pytorch.pi0_pytorch as _pp
 import n0vtla.models_pytorch.tactile_encoder as _te
 from n0vtla.models_pytorch.n0vtla_policy import N0VTLAConfig, N0VTLAPolicy
-from taxel_encoder import GloveTargetFeatures, TaxelTactileEncoder, load_taxel_pads
+from taxel_encoder import ENCODERS, GloveTargetFeatures, load_taxel_pads
 
 TACTILE_KEY = "glove_left"
 TACT_PREFIXES = ("tactile_encoder.", "tactile_predictor.", "recon_head.")
@@ -62,11 +62,12 @@ class _TinyPaliGemmaWithExpert(_gp.PaliGemmaWithExpertModel):
 
 
 class GloveVTLA(N0VTLAPolicy):
-    def __init__(self, config, taxel_pad=None):
+    def __init__(self, config, taxel_pad=None, encoder: str = "grid"):
         if taxel_pad is None:
             taxel_pad, _ = load_taxel_pads()
+        self_encoder = encoder
         orig, orig_pg = _te.FrozenDINOv2TactileEncoder, _pp.PaliGemmaWithExpertModel   # names looked up at call time
-        _te.FrozenDINOv2TactileEncoder = functools.partial(TaxelTactileEncoder, taxel_pad=taxel_pad)
+        _te.FrozenDINOv2TactileEncoder = functools.partial(ENCODERS[self_encoder], taxel_pad=taxel_pad)
         if config.paligemma_variant == "dummy":
             _pp.PaliGemmaWithExpertModel = _TinyPaliGemmaWithExpert
         try:
@@ -107,8 +108,8 @@ class GloveVTLA(N0VTLAPolicy):
         return self._compute_z(vl_ctx, prefix_pad_masks)[0]
 
 
-def build_model(config, device, taxel_pad=None) -> GloveVTLA:
-    m = GloveVTLA(config, taxel_pad=taxel_pad).to(device)
+def build_model(config, device, taxel_pad=None, encoder: str = "grid") -> GloveVTLA:
+    m = GloveVTLA(config, taxel_pad=taxel_pad, encoder=encoder).to(device)
     m.tactile_encoder.float(); m.tactile_predictor.float(); m.recon_head.float(); m.z_proj.float()   # small heads in fp32 (the repo runs the predictor in fp32)
     return m
 

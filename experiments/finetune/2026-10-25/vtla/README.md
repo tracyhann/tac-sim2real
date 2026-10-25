@@ -24,8 +24,15 @@ replay) and the total commanded grip force in the slot the canonical layout keep
   the prefix never sees z). Initialised from the pretrained base [NeoteAI/n0-vtla-base](https://huggingface.co/NeoteAI/n0-vtla-base)
   (8.3 GB; predictor, z_proj and gate included).
 - **Swapped**: the tactile encoder. The repo encodes optical tactile *images* with a frozen DINOv2. Our glove gives 880 force
-  values, so `code/taxel_encoder.py` turns them into 16 tokens (one per glove pad + one whole-hand token, `assets/glove_taxels.json`).
-  Touch is a value array here, never an image.
+  values on 15 pads, each a full rows x cols grid (distal pads 9 x 8, thumb distal 16 x 10, thenar / hypothenar 13 x 8, the
+  others 3 x 8 or 4 x 8), so `code/taxel_encoder.py` turns them into 16 tokens (one per pad + one whole-hand token), the same
+  layout as the repo's CLS + pooled tokens. Touch is a value array here, never an image. Default encoder `grid`
+  (`--tactile_encoder grid`): every taxel gets the same force embedding plus a Fourier encoding of its (row, col) inside its pad
+  and the pad's embedding; each pad pools its taxels by attention and adds explicit "where" summaries (total force, contact
+  area, force-weighted centroid and spread); the hand token pools the pads. This keeps the spatial structure a ViT would see
+  (a contact that moves by one row changes the tokens a little, a press on another finger a lot: 0.6 vs 7.5 at
+  initialisation). `--tactile_encoder mlp` is the first version (a separate weight per taxel slot, no position encoding),
+  kept for the ablation.
 - **Added**: the paper's Stage-1 predictor objective, which the repo does not ship: symmetric InfoNCE between the pooled z and
   z* = f_enc(touch[t+H] - touch[t]) (f_enc = a frozen random projection of the touch change and its per-pad totals), plus an
   L1 reconstruction of the per-pad touch change from z.
@@ -137,13 +144,13 @@ only the image is swapped; the paper reports about 0.9 vs 0.2).
 ## 8. Files
 
 `setup.sh`, `smoke.sh`, `env/requirements.txt`, `assets/glove_taxels.json` (pad of each taxel), `code/`:
-`taxel_encoder.py` (glove tokens + frozen target features), `vtla_model.py` (GloveVTLA, weight loading, stages),
+`taxel_encoder.py` (grid and mlp glove encoders + the frozen target features), `vtla_model.py` (GloveVTLA, weight loading, stages),
 `vtla_data.py` (samples, normalisation, prompts), `train_vtla.py`, `eval_vtla.py`, `test_vtla.py`, `build_vtla_labels.py`
 (authors only).
 
 ## 9. Results
 
-**Smoke test, 2026-10-25** (one H200; 25 released rows, all used for training; 30 steps per stage, batch 8; eval on 3 of
+**Smoke test, 2026-10-25, first version (`mlp` encoder)** (one H200; 25 released rows, all used for training; 30 steps per stage, batch 8; eval on 3 of
 the training rows, 5 starts each). It passed end to end for both arms in about 7 min: unit test, weight load, three stages,
 save, reload, sampling, probes.
 
@@ -158,7 +165,16 @@ save, reload, sampling, probes.
 | VTS | 2.59 -> 2.21 | 1.45 -> 0.35 | 0.34 -> 0.18 | 69.9 / 2.1 / 2.9 deg (42.1 / 1.7 / 1.8) | 0.20 (0.07) |
 | VTF | 2.59 -> 2.21 | 1.47 -> 0.40 | 0.37 -> 0.18 | 77.3 / 2.8 / 14.8 N (42.1 / 1.9 / 8.9) | 0.20 (0.07) |
 
-The pred stage is identical in both arms (it does not see the action target; same seed), as it should be. After 90 steps
+Re-run with the default `grid` encoder (same settings, 07:50-07:58): passed for both arms; joint 0.63 s / step.
+
+| arm (grid encoder) | pred loss | align action loss | joint action loss | open-loop wrist mm / joints deg / slot 9 (model; hold) | z top-1 (chance) |
+|---|---|---|---|---|---|
+| VTS | 3.04 -> 2.41 | 1.08 -> 0.28 | 0.35 -> 0.18 | 67.9 / 2.2 / 2.8 deg (42.1 / 1.7 / 1.8) | 0.07 (0.07) |
+| VTF | 3.04 -> 2.41 | 1.16 -> 0.28 | 0.32 -> 0.20 | 73.2 / 2.9 / 13.8 N (42.1 / 1.9 / 8.9) | 0.07 (0.07) |
+
+The pred stage is identical in both arms (it does not see the action target; same seed), as it should be. The probe to watch
+in real runs: after 30 pred steps z barely responds to the touch with either encoder (z_shift_touch 0.008 mlp, 0.001 grid);
+if it stays near 0 after a full pred stage, the tactile path is not being used. After 90 steps
 the policy is still worse than repeating the current action, and z hardly depends on the touch yet (z_shift_touch 0.008):
 these numbers only show that the losses go down, nothing about the arms. Real runs need the expanded dataset and the step
 counts of section 5.

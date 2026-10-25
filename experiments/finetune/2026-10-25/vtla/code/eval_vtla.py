@@ -52,7 +52,7 @@ def main():
     ids = a.ids or norm.d.get("val_ids") or None; rows = D.load_rows(Path(a.data), set(ids) if ids else None)
     data = D.GloveChunks(Path(a.data), rows, arm, H, norm, prompt=norm.d.get("prompt", "observable"), cache=a.cache, starts=range(0, D.N - 1, a.stride))
     cfg = M.make_config(H, dummy=run.get("dummy", False), dtype="float32" if dev.type == "cpu" else "bfloat16")
-    model = M.build_model(cfg, dev); rep = M.load_weights(model, str(ck / "model.safetensors")); model.eval()
+    model = M.build_model(cfg, dev, encoder=run.get("args", {}).get("tactile_encoder", "mlp")); rep = M.load_weights(model, str(ck / "model.safetensors")); model.eval()
     g = torch.Generator(device="cpu").manual_seed(a.seed); P, G, V, S9, Z, ZT, ZI, TG, per_row = [], [], [], [], [], [], [], [], {}
     for k0 in range(0, len(data), a.batch):
         items = [data[k] for k in range(k0, min(k0 + a.batch, len(data)))]; b = D.collate(items); obs, _act, tdel = D.to_obs(b, dev)
