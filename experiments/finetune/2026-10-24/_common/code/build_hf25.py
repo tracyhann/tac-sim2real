@@ -4,7 +4,7 @@ tracyhan816/mug-video-touch-lora-hf25, which setup.sh downloads - nobody else ne
 metadata files that differ ONLY in the control video, so the control is the only difference between the arms.
 
 Rows = the 25 pairs of the public release (data/mug-sim2video-pose-tactile, fetch_hf.sh, commit 6cf129c): the zero-shot W
-video (832 x 480, 81 frames, 16 fps, copied as is) + the replay's simulated touch of the left glove (normal_N, 880 channels,
+video, its simulated hand pose (handpose/<id>.npz, the released file) (832 x 480, 81 frames, 16 fps, copied as is) + the replay's simulated touch of the left glove (normal_N, 880 channels,
 sampled at the video frames). The touch stays a VALUE array (hf25_patch.py, user 10-24: never pixels): tactile/<id>.npz with
 touch (N), touch_rel = F / S, S, t and u = min(F / S, CAP) / CAP, the head's target; S = median total force over the frames with
 total > 1 N of that replay (its 81 frames span the whole 5 s window) = the normalisation the F / H runs lacked.
@@ -97,6 +97,7 @@ def build_row(c, meta, checks):
         Ts = np.load(st)["sim"].astype(np.float32); n_ = min(len(Ts), len(T))
         ck["vs_lora_ge_simtouch"] = dict(max_abs_N=float(np.abs(Ts[:n_] - T[:n_]).max()), total_r=float(np.corrcoef(Ts[:n_].sum(1), T[:n_].sum(1))[0, 1]))
     shutil.copy2(HFD / cid / "video.mp4", DS / "video" / f"{cid}.mp4")       # the video as released (= the Vision generation)
+    shutil.copy2(HFD / cid / "hand_pose.npz", DS / "handpose" / f"{cid}.npz")  # the simulated hand pose at the video frames (released file, unchanged)
     cv2.imwrite(str(DS / "start" / f"{cid}.png"), hv[0][..., ::-1])
     ck.update(save_touch(DS / "tactile" / f"{cid}.npz", T, touch_scale(T), tv, sim_covered=z["sim_covered"]))
     (co, _), (cs, black), (cc, _) = control(own), control(cube_dir / "sim.mp4"), control(cube_dir / "fun_ctrl.mp4")
@@ -107,7 +108,7 @@ def build_row(c, meta, checks):
     print(cid, "ok" if ok else "FAILED", {k: (round(v, 4) if isinstance(v, float) else v) for k, v in ck.items() if k not in ("own", "cube_dir", "replay")}, flush=True)
     return dict(id=cid, file_path=f"video/{cid}.mp4", control_file_path=None, text=prompt_for(variant), type="video", width=W, height=H,
                 group=c["group"], variant=variant, view=view, perturbation=meta.get("perturbation"), camera=meta.get("camera"), S=ck["S_N"],
-                tactile=f"tactile/{cid}.npz", start=f"start/{cid}.png", ctrl_own=co, ctrl_sim=cs, ctrl_cube=cc), ok
+                tactile=f"tactile/{cid}.npz", hand_pose=f"handpose/{cid}.npz", start=f"start/{cid}.png", ctrl_own=co, ctrl_sim=cs, ctrl_cube=cc), ok
 
 
 def test_cases(rows):
@@ -134,7 +135,7 @@ def test_cases(rows):
 
 
 def main():
-    for d in ("video", "start", "tactile", "ctrl"):
+    for d in ("video", "start", "tactile", "handpose", "ctrl"):
         (DS / d).mkdir(parents=True, exist_ok=True)
     cases = json.loads(((O / "release_cases.json") if (O / "release_cases.json").exists() else (HERE / "release_cases.json")).read_text())   # id -> generation + control (authors' map, kept outside the repo)
     meta = {m["id"]: m for m in csv.DictReader((HFD / "metadata.csv").open())}
