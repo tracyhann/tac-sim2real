@@ -334,6 +334,72 @@ Both recordings start inside the grip, so onset errors are 0 everywhere and are 
   `*_yawfix` configs exist but were never run. The error turns mug, grasp and hand together about the mug's vertical axis, so
   gravity, the carry and the contact physics are unchanged, and it is the same for every arm. The policy's state input carries the
   twin's wrist orientation, about 100 deg off the real video, also for every arm.
+
+### Yaw-fixed twin (D77) and a fixed-squeeze baseline (2026-10-26, for the CoRL LBR abstract)
+
+The test twins above use the canonical mug tracks, whose handle yaw is wrong. The D77 yaw-fixed twins were built on 10-23 by the
+standard harness (A/B tree scene_mug_yawfix/fix, same code for the fixed and the control track). Here they enter the same test
+through their own work root (`work_yawfix/<ep8>` = the canonical work files plus the s5-fixed mug track, via `SCENE_CFG`):
+recording replay (`datagen/vision_gt_step_yf.sh`), test set `dataset_gt_yawfix` (`code/build_gt.py --suffix _yawfix --video work`:
+the head video cut at the fixed twin's own window, checked against the canonical test video, offset 0 is the best match), the same
+checkpoints, 10 seeds, re-planned every 4 frames (`pred_gtyf_r4`), physics (`policy_gt.sh`, CS=_yawfix, tag gtyf4) and the glove
+judge (`glove_judge.py --suffix _yawfix`). Canonical results are kept as they are (tag gtr4).
+
+- 4397541c: fixed twin fails its own replay (airborne slip 7.1 mm against the 5 mm bar), excluded. The hold tuner (D80) is
+  refused by its pose guard: this episode's wrist glove masks are empty in every variant. The same-code canonical control slips
+  10.6 mm; the canonical twin used in the test slips 0.8 mm. So the 10-23 rebuild contributes too.
+- 55494490: the fixed twin's handle yaw matches the video (ViPE row psi -8 deg, was 96), and its recording replay passes (slip
+  3.5 mm). The glove-loaded middle finger is now in contact: 82 % of the window against the glove's 83 %; the canonical twin
+  never loads it. The missing middle finger was the yaw bug.
+- Cross-test on a vision-only twin: none exists for 55494490 (canonical or yaw-fixed), so it was not run.
+- Fixed-squeeze baseline (`code/offset_baseline.py`): T-obs's predictions plus a constant closing offset per joint, the training
+  set's median commanded-minus-observed angle (all 24,300 frames, or the 20,105 loaded frames; at most 2.1 deg). No training.
+
+| recording | twin | arm | success | carried | in place | carry force vs recording | glove r total | glove r loaded fingers | release error ms | agreement |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 55494490 | canonical | T-cmd | 10/10 | 10/10 | 10/10 | 1.27 | 0.60 ± 0.09 | 0.58 ± 0.09 | 174 ± 32 | 0.850 ± 0.002 |
+| 55494490 | canonical | V-cmd | 10/10 | 10/10 | 10/10 | 0.91 | 0.71 ± 0.07 | 0.63 ± 0.06 | 156 ± 13 | 0.851 ± 0.001 |
+| 55494490 | canonical | T-obs | 7/10 | 7/10 | 7/10 | 0.29 | 0.55 ± 0.15 | 0.48 ± 0.15 | 1043 ± 1393 | 0.795 ± 0.089 |
+| 55494490 | canonical | T-obs + median offset (all frames) | 10/10 | 10/10 | 10/10 | 1.00 | 0.78 ± 0.04 | 0.75 ± 0.04 | 176 ± 27 | 0.850 ± 0.002 |
+| 55494490 | canonical | T-obs + median offset (loaded frames) | 10/10 | 10/10 | 10/10 | 1.14 | 0.78 ± 0.04 | 0.76 ± 0.04 | 173 ± 26 | 0.850 ± 0.002 |
+| 55494490 | canonical | ref: recording replay | n/a | n/a | n/a | n/a | 0.96 | 0.94 | 165 | 0.851 |
+| 55494490 | canonical | ref: cmd | 1/1 | 1/1 | 1/1 | 1.00 | 0.96 | 0.94 | 170 | 0.851 |
+| 55494490 | canonical | ref: L-cmd | 1/1 | 1/1 | 1/1 | 1.01 | 0.96 | 0.94 | 180 | 0.850 |
+| 55494490 | canonical | ref: L-obs | 1/1 | 1/1 | 1/1 | 0.30 | 0.83 | 0.78 | 190 | 0.849 |
+| 55494490 | canonical | ref: meas | 0/1 | 1/1 | 0/1 | 0.24 | 0.04 | 0.08 | 660 | 0.819 |
+| 55494490 | yaw-fixed | T-cmd | 9/10 | 10/10 | 10/10 | 0.95 | 0.77 ± 0.04 | 0.64 ± 0.04 | 227 ± 20 | 0.976 ± 0.003 |
+| 55494490 | yaw-fixed | V-cmd | 10/10 | 10/10 | 10/10 | 2.14 | 0.84 ± 0.02 | 0.80 ± 0.02 | 248 ± 31 | 0.977 ± 0.003 |
+| 55494490 | yaw-fixed | T-obs | 9/10 | 10/10 | 10/10 | 0.27 | 0.57 ± 0.02 | 0.52 ± 0.02 | 147 ± 8 | 0.985 ± 0.002 |
+| 55494490 | yaw-fixed | T-obs + median offset (all frames) | 10/10 | 10/10 | 10/10 | 0.70 | 0.81 ± 0.02 | 0.74 ± 0.02 | 220 ± 1 | 0.979 ± 0.000 |
+| 55494490 | yaw-fixed | T-obs + median offset (loaded frames) | 10/10 | 10/10 | 10/10 | 0.76 | 0.82 ± 0.02 | 0.75 ± 0.02 | 223 ± 3 | 0.979 ± 0.000 |
+| 55494490 | yaw-fixed | ref: recording replay | n/a | n/a | n/a | n/a | 0.95 | 0.92 | 20 | 0.998 |
+| 55494490 | yaw-fixed | ref: cmd | 1/1 | 1/1 | 1/1 | 1.00 | 0.95 | 0.92 | 23 | 0.998 |
+| 55494490 | yaw-fixed | ref: L-cmd | 1/1 | 1/1 | 1/1 | 1.00 | 0.95 | 0.92 | 60 | 0.994 |
+| 55494490 | yaw-fixed | ref: L-obs | 1/1 | 1/1 | 1/1 | 0.27 | 0.66 | 0.62 | 63 | 0.994 |
+| 55494490 | yaw-fixed | ref: meas | 1/1 | 1/1 | 1/1 | 0.26 | 0.36 | 0.35 | 27 | 0.986 |
+| 4397541c | canonical twin only (yaw ~104 deg off) | T-cmd | 10/10 | 10/10 | 10/10 | 1.80 | 0.61 ± 0.06 | 0.49 ± 0.05 | 248 ± 17 | 0.961 ± 0.002 |
+| 4397541c | canonical twin only (yaw ~104 deg off) | V-cmd | 5/10 | 10/10 | 5/10 | 2.26 | 0.62 ± 0.04 | 0.56 ± 0.04 | 242 ± 2 | 0.962 ± 0.000 |
+| 4397541c | canonical twin only (yaw ~104 deg off) | T-obs | 10/10 | 10/10 | 10/10 | 0.91 | 0.48 ± 0.14 | 0.33 ± 0.05 | 680 ± 553 | 0.869 ± 0.020 |
+| 4397541c | canonical twin only (yaw ~104 deg off) | T-obs + median offset (all frames) | 10/10 | 10/10 | 10/10 | 0.99 | 0.61 ± 0.03 | 0.57 ± 0.04 | 236 ± 1 | 0.963 ± 0.000 |
+| 4397541c | canonical twin only (yaw ~104 deg off) | T-obs + median offset (loaded frames) | 10/10 | 10/10 | 10/10 | 1.09 | 0.62 ± 0.03 | 0.58 ± 0.03 | 236 ± 1 | 0.963 ± 0.000 |
+| 4397541c | canonical twin only (yaw ~104 deg off) | ref: recording replay | n/a | n/a | n/a | n/a | 0.87 | 0.84 | 70 | 0.979 |
+| 4397541c | canonical twin only (yaw ~104 deg off) | ref: cmd | 1/1 | 1/1 | 1/1 | 1.00 | 0.87 | 0.84 | 57 | 0.981 |
+| 4397541c | canonical twin only (yaw ~104 deg off) | ref: L-cmd | 1/1 | 1/1 | 1/1 | 1.07 | 0.87 | 0.83 | 53 | 0.981 |
+| 4397541c | canonical twin only (yaw ~104 deg off) | ref: L-obs | 1/1 | 1/1 | 1/1 | 0.53 | 0.62 | 0.37 | 47 | 0.890 |
+| 4397541c | canonical twin only (yaw ~104 deg off) | ref: meas | 1/1 | 1/1 | 1/1 | 0.29 | 0.17 | 0.18 | 43 | 0.972 |
+
+Mean ± sd over the 10 seeds; references n = 1. Release error = offset error of the loaded fingers against the glove.
+
+- On the yaw-fixed 55494490 every arm carries and places the mug in all 10 seeds. Success differs only at the slip bar: T-obs
+  fails one seed at 5.1 mm, T-cmd one at 5.7 mm; median slip T-obs 3.4 mm, T-cmd 3.0 mm, V-cmd 1.8 mm.
+- Commanded against observed pose: with the glove as the judge it survives and gets stronger on the fixed twin (T-cmd − T-obs:
+  total r +0.20, loaded-finger r +0.11, p < 0.001 over seeds). In success it no longer separates (9/10 each).
+- T-cmd against V-cmd: V-cmd matches the glove better on the fixed twin too (r 0.84 / 0.80 against 0.77 / 0.64, p < 0.001) and
+  succeeds 10/10, while it squeezes 2.1x the recording.
+- The fixed squeeze matches T-cmd everywhere: 20/20 and 10/10 on the recordings, 35/36 on the simulated test rows (11/12 on the
+  water / low-friction / light-grip rows, where T-obs holds 2/12), and better glove r than T-cmd. On these tests the gain of the
+  touch-calibrated labels over observed-pose labels is a constant closing offset of at most 2 deg per joint. That constant comes
+  from the touch-calibrated replays; the vision-only replay's closing offset is larger and squeezes about 2x.
  The vision-only replay still uses the touch-informed
   grasp fit and hand track, so V-cmd is "vision-only grip control", not a fully vision-only pipeline. Prompts over 200 tokens
   are cut by 1-3 tokens (about 0.3 % of training samples, same in every arm).
