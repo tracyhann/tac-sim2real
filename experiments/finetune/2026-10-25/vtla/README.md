@@ -286,6 +286,54 @@ Secondary test: the 36 simulated test rows (touch-on twins of held-out perturbat
   3-7 mm. With re-planning it slips 1.9 mm (median).
 - Both tests agree on the order T-cmd > V-cmd > T-obs. Touch-calibrated against vision-only commanded labels is the smaller
   gap: 20/20 against 15/20 on the recordings (all five failures on one recording) and 35/36 against 33/36 in simulation.
-- Limits: two test recordings; the noise seeds are not independent scenes. The vision-only replay still uses the touch-informed
+- Limits: two test recordings; the noise seeds are not independent scenes.
+
+### The real glove as the judge (2026-10-26, for the CoRL LBR abstract)
+
+The held-out recording test above is judged inside our own touch-calibrated twin, which could favour T-cmd, whose labels come
+from that twin. Here every re-planned rollout of that test is compared with the recording's REAL glove, per part (thumb, index,
+middle, ring, little, palm), time-aligned at 100 Hz (`scene_mug datagen/glove_judge.py` -> `runs/datagen/glove_judge_gtr4.*`).
+Sim side = the force through each part's taxel-covered surface. Contact = part total > 0.5 N on both sides (fig5 `temporal`),
+runs under 0.1 s removed. Loaded = glove in contact over 20 % of the window. Mean ± sd over the 10 noise seeds; references n = 1.
+Both recordings start inside the grip, so onset errors are 0 everywhere and are left out; the offset is the release.
+
+| arm | recording | n | r total | r loaded fingers | offset error ms | hand release ms | agreement | loaded-set match | silent-part contact s | magnitude vs recording |
+|---|---|---|---|---|---|---|---|---|---|---|
+| T-cmd | 4397541c | 10 | 0.61 ± 0.06 | 0.49 ± 0.05 | 248 ± 17 | 268 ± 52 | 0.961 ± 0.002 | 1.00 ± 0.00 | 0.00 ± 0.00 | 1.68 ± 0.15 |
+| T-cmd | 55494490 | 10 | 0.60 ± 0.09 | 0.58 ± 0.09 | 174 ± 32 | 223 ± 69 | 0.850 ± 0.002 | 0.67 ± 0.00 | 0.00 ± 0.00 | 1.23 ± 0.14 |
+| V-cmd | 4397541c | 10 | 0.62 ± 0.04 | 0.56 ± 0.04 | 242 ± 2 | 236 ± 5 | 0.962 ± 0.000 | 1.00 ± 0.00 | 0.00 ± 0.00 | 1.71 ± 0.08 |
+| V-cmd | 55494490 | 10 | 0.71 ± 0.07 | 0.63 ± 0.06 | 156 ± 13 | 197 ± 25 | 0.851 ± 0.001 | 0.67 ± 0.00 | 0.00 ± 0.00 | 0.90 ± 0.08 |
+| T-obs | 4397541c | 10 | 0.48 ± 0.14 | 0.33 ± 0.05 | 680 ± 553 | 250 ± 40 | 0.869 ± 0.020 | 0.73 ± 0.14 | 0.00 ± 0.00 | 0.93 ± 0.49 |
+| T-obs | 55494490 | 10 | 0.55 ± 0.15 | 0.48 ± 0.15 | 1043 ± 1393 | -742 ± 1609 | 0.795 ± 0.089 | 0.67 ± 0.00 | 0.00 ± 0.00 | 0.41 ± 0.18 |
+| recording's own replay | 4397541c | 1 | 0.87 | 0.84 | 70 | 160 | 0.979 | 1.00 | 0.00 | n/a |
+| recording's own replay | 55494490 | 1 | 0.96 | 0.94 | 165 | 300 | 0.851 | 0.67 | 0.00 | n/a |
+| ref: cmd (logged servo targets) | 4397541c | 1 | 0.87 | 0.84 | 57 | 120 | 0.981 | 1.00 | 0.00 | 1.00 |
+| ref: cmd (logged servo targets) | 55494490 | 1 | 0.96 | 0.94 | 170 | 310 | 0.851 | 0.67 | 0.00 | 1.00 |
+| ref: L-cmd labels | 4397541c | 1 | 0.87 | 0.83 | 53 | 120 | 0.981 | 1.00 | 0.00 | 1.06 |
+| ref: L-cmd labels | 55494490 | 1 | 0.96 | 0.94 | 180 | 310 | 0.850 | 0.67 | 0.00 | 1.01 |
+| ref: L-obs labels | 4397541c | 1 | 0.62 | 0.37 | 47 | 100 | 0.890 | 1.00 | 0.00 | 0.84 |
+| ref: L-obs labels | 55494490 | 1 | 0.83 | 0.78 | 190 | 330 | 0.849 | 0.67 | 0.00 | 0.36 |
+| ref: meas (measured angles) | 4397541c | 1 | 0.17 | 0.18 | 43 | 70 | 0.972 | 1.00 | 0.00 | 1.50 |
+| ref: meas (measured angles) | 55494490 | 1 | 0.04 | 0.08 | 660 | 470 | 0.819 | 0.67 | 0.00 | 1.78 |
+
+- r = Pearson correlation of the force time profile with the glove, for the 6-part total and the mean over glove-loaded fingers.
+  Offset = last contact per loaded finger, sim minus glove. Silent-part contact = sim contact on parts the glove leaves silent.
+  Magnitude = mean simulated total while the glove is in contact, over the recording's own replay (glove magnitudes are relative).
+- The recording's own replay and the `cmd` / `L-cmd` references match the glove partly by construction: their grip controller
+  tracks the glove. The policies never see the glove (no touch input), so their rows are a fair test.
+- Commanded against observed pose survives with the glove as the judge. On 4397541c T-cmd beats T-obs on total r (+0.13,
+  permutation p 0.008 over seeds), loaded-finger r (+0.16, p < 0.001), offset error (-433 ms, p 0.03) and agreement (+0.09,
+  p < 0.001). On 55494490 every difference has the same sign but p 0.08-0.37, because T-obs is bimodal across seeds.
+- Touch-calibrated against vision-only commanded labels does not survive. V-cmd matches the glove as well as T-cmd or slightly
+  better: total r 0.71 against 0.60 on 55494490 (p 0.005), loaded-finger r 0.56 against 0.49 on 4397541c (p 0.002), offsets
+  within 6-18 ms. The T-cmd vs V-cmd gap in the twin (20/20 against 15/20) is about the outcome (where the mug ends up), not the
+  contact profile.
+- No arm loads a glove-silent part. On 55494490 the glove loads the middle finger but the twin never does, not even the
+  recording's own replay (loaded-set match 0.67 in every row): a twin limitation shared by all arms.
+- The test twins use the canonical mug tracks, whose handle yaw is wrong (D77: 104 deg on 4397541c, 96 deg on 55494490). The
+  `*_yawfix` configs exist but were never run. The error turns mug, grasp and hand together about the mug's vertical axis, so
+  gravity, the carry and the contact physics are unchanged, and it is the same for every arm. The policy's state input carries the
+  twin's wrist orientation, about 100 deg off the real video, also for every arm.
+ The vision-only replay still uses the touch-informed
   grasp fit and hand track, so V-cmd is "vision-only grip control", not a fully vision-only pipeline. Prompts over 200 tokens
   are cut by 1-3 tokens (about 0.3 % of training samples, same in every arm).
