@@ -32,10 +32,12 @@ sys.path.insert(0, str(HERE.parent.parent.parent / "2026-10-24" / "_common" / "c
 from prompts import _DEFAULT, prompt_from_params  # noqa: E402
 
 N, FPS, IMG = 81, 16, 224
-ARMS = ("vts", "vtf")
+ARMS = ("vts", "vtf", "obs", "cmd")                                  # obs / cmd: the touch-data comparison (README section 11)
 DELTA_MASK = np.array([True] * 9 + [False] + [True] * 22)
 LAYOUT = {"vts": ["wrist_x", "wrist_y", "wrist_z"] + [f"wrist_rot6d_{i}" for i in range(6)] + ["closure_rad"] + [f"q_{i}" for i in range(22)],
           "vtf": ["wrist_x", "wrist_y", "wrist_z"] + [f"wrist_rot6d_{i}" for i in range(6)] + ["grip_force_N"] + [f"q_cmd_{i}" for i in range(22)]}
+LAYOUT["obs"] = LAYOUT["vts"]
+LAYOUT["cmd"] = ["wrist_x", "wrist_y", "wrist_z"] + [f"wrist_rot6d_{i}" for i in range(6)] + ["closure_rad"] + [f"q_cmd_{i}" for i in range(22)]
 TACTILE_KEY = "glove_left"
 IMAGE_KEYS = ("base_0_rgb", "left_wrist_0_rgb", "right_wrist_0_rgb")
 
@@ -88,13 +90,18 @@ class Norm:
         self.d = d; self.sq01, self.sq99 = np.array(d["state_q01"]), np.array(d["state_q99"]); self.aq01, self.aq99 = np.array(d["action_q01"]), np.array(d["action_q99"])
         self.tac = float(d["tactile_scale_N"])
 
+    # range floor (2026-10-26): finger joints that barely move in most rows have q01..q99 ~ 1e-4 rad, so the rare real movement (the
+    # finger batch) normalised to |x| ~ 400 and the first comparison run started at loss 92; 0.02 (~1 deg / 2 cm / 0.02 rot6d) is below
+    # every dimension's real spread in the pi0.5 sense and keeps the rest within a few units
+    FLOOR = 0.02
+
     @staticmethod
     def _n(x, lo, hi):
-        return 2.0 * (x - lo) / np.maximum(hi - lo, 1e-6) - 1.0
+        return 2.0 * (x - lo) / np.maximum(hi - lo, Norm.FLOOR) - 1.0
 
     @staticmethod
     def _u(x, lo, hi):
-        return (x + 1.0) / 2.0 * np.maximum(hi - lo, 1e-6) + lo
+        return (x + 1.0) / 2.0 * np.maximum(hi - lo, Norm.FLOOR) + lo
 
     def state(self, s):
         return self._n(s, self.sq01, self.sq99)
@@ -136,7 +143,7 @@ class GloveChunks(torch.utils.data.Dataset):
     def __init__(self, ds: Path, rows, arm, H, norm: Norm, prompt="observable", cache=None, starts=None, max_len=200):
         assert arm in ARMS
         self.ds, self.rows, self.arm, self.H, self.norm, self.max_len = Path(ds), rows, arm, H, norm, max_len
-        self.frames = [load_frames(self.ds / r["video"], Path(cache) if cache else None) for r in rows]
+        self.frames = [load_frames(self.ds / r["video"], Path(cache) if cache else None) for r in rows]   # r["video"] may be absolute (comparison sets)
         self.lab = [dict(np.load(self.ds / "vtla" / f"{r['id']}.npz")) for r in rows]
         self.prompts = [policy_prompt(r, prompt) for r in rows]
         st = starts if starts is not None else range(N - 1)

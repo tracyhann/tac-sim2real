@@ -179,7 +179,7 @@ the policy is still worse than repeating the current action, and z hardly depend
 these numbers only show that the losses go down, nothing about the arms. Real runs need the expanded dataset and the step
 counts of section 5.
 
-## 10. Comparison runs A-E (priority set, 2026-10-25)
+## 10. Comparison runs A-E (priority set, 2026-10-25; superseded by section 11)
 
 | run | action | touch | stages | answers |
 |---|---|---|---|---|
@@ -207,3 +207,85 @@ R2S2R=/data/r2s2r bash runs_abcde.sh B        # one GPU per run, about 4-5 h eac
   rows (frames of a row are correlated). Planned: the physics check (execute a predicted 1 s chunk in the simulator from the
   replay's state at t; held = slip < 5 mm and no drop), first with the ground-truth actions of each arm as an oracle.
 - Limits: mass cannot be tested with this data (the replay's grip does not respond to the load); two source clips only.
+
+## 11. Does the touch-calibrated simulation data help? (three arms, 2026-10-26)
+
+A real hand controls either joint angles or force, not both, so the policy gets no touch input and outputs positions only. What
+differs between the arms is only where the finger labels come from. Same model (pi0.5 policy, joint stage only, no tactile
+tokens), same 300-row size, same 1500 steps at batch 32 (about 1 h on one H200), same inputs (head-camera video, measured hand
+state, prompt).
+
+| run | training rows | finger action label | what it stands for |
+|---|---|---|---|
+| T-obs | `dataset_cmp_t` | observed hand pose (`act_obs`) | a video of a human hand: what the fingers did |
+| T-cmd | `dataset_cmp_t` | commanded pose of the touch-calibrated replay (`act_cmd`, logged servo targets) | our tactile sim data: where the fingers must aim so the grip force matches the glove (N0-VTLA's commanded-target convention) |
+| V-cmd | `dataset_cmp_v` | commanded pose of the vision-only replay (clip config `touch: false`) | sim data without touch: fixed closing offset, release when the tracked mug stops |
+
+```bash
+R2S2R=<root> envs/scenemug/bin/python code/build_cmp.py      # the two 300-row sets + 36 simulated test rows (needs the replays)
+R2S2R=<root> envs/scenemug/bin/python code/build_gt.py       # the held-out recordings (needs datagen/vision_gt_step.sh first)
+R2S2R=<root> bash run_cmp.sh T-cmd 1500                      # train + predict the 36 simulated test rows
+R2S2R=<root> bash predict_gt.sh T-cmd 4                       # the two held-out recordings, 10 noise seeds, re-plan every 4 frames
+```
+
+- Training sets. `dataset_cmp_t` = 100 rows per perturbation batch (wrist jitter 112, finger / grasp jitter 100, relocated
+  set-down 88), both source clips. `dataset_cmp_v` = 300 valid vision-only twins of the same perturbations. The vision-only
+  replay tips the mug at release on clip 53780879, so its composition is skewed: edf jitter 144, finger jitter edf 60 / 538 52,
+  relocate edf 44.
+- Main test = the held-out recordings 4397541c and 55494490 (user 2026-10-26), never a training row or a perturbation source.
+  Input = the real head-camera clip resampled to 81 frames at 16 fps, plus the recording's measured hand state. The physics test
+  re-runs each recording in the simulator (cf_relocate variant `rec`). The wrist follows the recording. The 22 finger servos
+  follow the policy's predicted joint targets from frame 1 to the end, so the grasp, hold, set-down and release are the policy's.
+  10 noise seeds per recording and arm = 20 trials per arm.
+- References on the same scenes: `meas` / `cmd` = the recording's own measured angles / logged servo targets at 100 Hz;
+  `L-obs` / `L-cmd` = the recording's labels at the policy's 16 fps (a perfect T-obs / T-cmd policy).
+- Metrics (`scene_mug datagen/policy_gt.sh` -> `runs/datagen/policy_gt.json`): success (airborne slip <= 5 mm and 5 deg, not
+  dropped, tilt < 30 deg, rests within 30 mm of the recording), dropped, tipped, carried force against the recording, release
+  delay, and open-loop joint error against both labels. Secondary test: the 36 simulated test rows (`policy_batch.sh`).
+- Expected if the touch data matter: T-cmd holds the mug about as often as `L-cmd`. T-obs drops it more often, with lower
+  carried force, like the `meas` oracle (on the simulated rows meas held 29/37 against cmd 38/38). V-cmd squeezes far too hard
+  (130-210 N against 36-51 N on the replays) or lets go at the wrong time.
+- Execution protocol: `predict_cmp.py --every 4` (`predict_gt.sh <run> 4`) re-plans every 4 frames and executes the first 4 actions
+  of each chunk, the usual pi0.5 practice. Executing whole 16-frame chunks fails at the release in every arm: both recordings let
+  go at frames 64-70, and the chunk from frame 64 alone (hand still closed in the real video) keeps the fingers about 7 deg too
+  closed, so the retreating wrist drags the mug 7-9 cm. The training clips let go at frame 66.7, so this is not a timing shift.
+
+### Results on the held-out recordings (2026-10-26, 1500 steps, 10 noise seeds per recording)
+
+Re-planned every 4 frames (`runs/datagen/policy_gtr4.json`). "carried" = the mug follows the recording from lift-off to set-down;
+"in place" = it rests within 30 mm of the recording's final spot, tilt < 30 deg.
+
+| run | success | carried | in place | carry force vs recording | 4397541c | 55494490 |
+|---|---|---|---|---|---|---|
+| T-obs | 17/20 | 17/20 | 17/20 | 0.31 | 10/10, force 0.91 | 7/10, force 0.29, 3 knocked over |
+| T-cmd | **20/20** | 20/20 | 20/20 | 1.59 | 10/10, force 1.80 | 10/10, force 1.27 |
+| V-cmd | 15/20 | 20/20 | 15/20 | 1.55 | 5/10, force 2.26, mug moved 22-41 mm | 10/10, force 0.91 |
+| perfect `act_obs` labels | 2/2 | 2/2 | 2/2 | 0.41 | | |
+| perfect `act_cmd` labels | 2/2 | 2/2 | 2/2 | 1.04 | | |
+
+- Open-loop finger error against the recording's own label: T-obs 0.64 deg, T-cmd 1.35 deg, V-cmd 1.52 deg.
+- Reading: the commanded-pose labels from the touch-calibrated replay are the only ones that hold and place both mugs every
+  time. The observed-pose policy grips with a third of the recorded force and loses the mug on one recording. The vision-only
+  commanded pose carries every mug but squeezes up to 2.3x harder and shifts the mug at release on the other.
+- Whole 16-frame chunks (`policy_gt.json`): success 1-2/20 in every arm (the release failure above). Carried: T-obs 2/20,
+  T-cmd 16/20, V-cmd 17/20.
+
+Secondary test: the 36 simulated test rows (touch-on twins of held-out perturbations, generated videos; `policy_batch.sh`,
+`runs/datagen/policy_cmp_r4.json`). Strict = airborne in-hand slip <= 5 mm and 5 deg, not dropped, tilt < 30 deg, rests within
+30 mm. Kept = not dropped and not tipped.
+
+| run | strict, re-plan every 4 | kept | wrist jitter | finger / grasp jitter | moved set-down | carry force | strict, 16-frame chunks |
+|---|---|---|---|---|---|---|---|
+| T-obs | 26/36 | 27/36 | 12/12 | 2/12 | 12/12 | 0.28 | 24/36 |
+| T-cmd | **35/36** | 35/36 | 12/12 | 11/12 | 12/12 | 0.98 | 32/36 |
+| V-cmd | 33/36 | 34/36 | 12/12 | 9/12 | 12/12 | 1.15 | 8/36 |
+
+- The finger / grasp jitter rows (more water, lower friction, lighter grip) separate the arms. The observed-pose policy holds 2 of
+  12 there.
+- V-cmd's 16-frame score is mostly the strict slip gate: on clip edf79415 the mug slides 6-8 mm in the hand but is placed within
+  3-7 mm. With re-planning it slips 1.9 mm (median).
+- Both tests agree on the order T-cmd > V-cmd > T-obs. Touch-calibrated against vision-only commanded labels is the smaller
+  gap: 20/20 against 15/20 on the recordings (all five failures on one recording) and 35/36 against 33/36 in simulation.
+- Limits: two test recordings; the noise seeds are not independent scenes. The vision-only replay still uses the touch-informed
+  grasp fit and hand track, so V-cmd is "vision-only grip control", not a fully vision-only pipeline. Prompts over 200 tokens
+  are cut by 1-3 tokens (about 0.3 % of training samples, same in every arm).

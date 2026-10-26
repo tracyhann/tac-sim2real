@@ -60,6 +60,7 @@ def main():
     ap.add_argument("--no_touch", action="store_true", help="train and evaluate without the glove (predictor gets its null token)")
     ap.add_argument("--val_every", type=int, default=500); ap.add_argument("--val_max", type=int, default=256, help="held-out samples per evaluation")
     ap.add_argument("--val_stride", type=int, default=4)
+    ap.add_argument("--ckpt_every", type=int, default=0, help="save <out>/<stage>_ckpt every N steps (model + step; a cut pool step resumes there)")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", force=True)   # n0vtla configures logging on import
     random.seed(a.seed); np.random.seed(a.seed); torch.manual_seed(a.seed)
@@ -105,11 +106,17 @@ def main():
     model.train(); logf = (out / "log.jsonl").open("a"); step_total = 0; best = float("inf")
     stages = [(s.split(":")[0], int(s.split(":")[1])) for s in a.stages.split(",") if s]
     for stage, n_steps in stages:
+        if (out / stage / "model.safetensors").exists() and (out / stage / "run.json").exists() and a.ckpt_every:
+            logging.info("== stage %s already done (%s): loading it", stage, out / stage); M.load_weights(model, str(out / stage / "model.safetensors")); continue
+        s0 = 0; ckd = out / f"{stage}_ckpt"
+        if a.ckpt_every and (ckd / "state.json").exists():
+            s0 = int(json.loads((ckd / "state.json").read_text())["step"]); M.load_weights(model, str(ckd / "model.safetensors"))
+            logging.info("== stage %s: resuming at step %d from %s (optimizer state restarts)", stage, s0, ckd)
         groups = M.set_stage(model, stage); peak = dict(pred=a.lr_pred, align=a.lr_align, joint=a.lr_joint)[stage]; model.zero_grad(set_to_none=True)
         opt = torch.optim.AdamW(groups, lr=peak, betas=(0.9, 0.95), eps=1e-8, weight_decay=1e-10)   # the repo's AdamW defaults
         logging.info("== stage %s: %d steps, %.1f M trainable params, peak lr %.1e", stage, n_steps, M.count(groups) / 1e6, peak)
         it = iter(dl); t0 = time.time(); hist = []
-        for s in range(n_steps):
+        for s in range(s0, n_steps):
             try:
                 b = next(it)
             except StopIteration:
@@ -137,6 +144,9 @@ def main():
                 logging.info("%s %4d/%d loss %.4f (mean10 %.4f) gn %.2f lr %.2e %s | %.2f s/step, %.1f GB", stage, s, n_steps, rec["loss"], float(np.mean(hist[-10:])), rec["grad_norm"], rec["lr"],
                              {k: round(v, 4) if isinstance(v, float) else v for k, v in parts.items()}, (time.time() - t0) / (s + 1), mem)
                 logf.flush()
+            if a.ckpt_every and (s + 1) % a.ckpt_every == 0 and s + 1 < n_steps:
+                save(model, ckd, norm, dict(arm=a.arm, stage=stage, steps=s + 1, args=vars(a))); (ckd / "state.json").write_text(json.dumps(dict(step=s + 1)))
+                logging.info("checkpoint %s step %d", ckd, s + 1)
             if val is not None and ((s + 1) % a.val_every == 0 or s == n_steps - 1):
                 ev = evaluate(stage); logf.write(json.dumps(dict(stage=stage, step=s, total=step_total, val=True, **ev)) + "\n"); logf.flush()
                 logging.info("val %s %d: %s", stage, s + 1, {k: (round(v, 4) if v is not None else None) for k, v in ev.items()})

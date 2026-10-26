@@ -5,6 +5,10 @@ Per video frame (81 at 16 fps; the replay is sampled at the frame's simulation t
   state    (81, 32)  [wrist xyz (3) | wrist rot6d (6) | closure (1) | 22 MEASURED finger joints]   (both arms' proprioception)
   act_vts  (81, 32)  = state                                                                     (VTS: the measured state chunk)
   act_vtf  (81, 32)  [wrist xyz | wrist rot6d | grip force (1) | 22 COMMANDED finger joints]       (VTF: force-informed action)
+  act_obs  (81, 32)  = state (the observed hand pose as the action)                                (comparison arm "obs")
+  act_cmd  (81, 32)  [wrist xyz | wrist rot6d | closure (1) | 22 COMMANDED finger joints]          (comparison arm "cmd" = B': position
+                     commands only, the N0-VTLA convention of an action = the commanded target)
+  q_cmd source: the cf runs' cf_log.npz ctrl_f (the servo targets the controller wrote, 100 Hz) when present, else the formula below
   q_cmd    (81, 22)  the replay's position-servo targets: grasp pose qg + CLOSE_W[f][j] * delta_f(t) on the loaded fingers' closing
                      joints, + the pulp offset on their distal flexion joint (cliprep.replay: d.ctrl = qg + w (delta + kp e) +
                      pulp; e is always 0 there). delta_f is the PI loop's closing offset that makes the simulated normal force of
@@ -87,11 +91,20 @@ def build_row(ds, row, cases):
             if not nm.startswith(f"mano_{f}_"):
                 continue
             q_cmd[:, j] = qg[nm] + CLOSE_W[f].get(nm, 0.0) * delta[:, k] + (pulp[:, k] if nm == f"mano_{f}_2_flex" else 0.0)
+    lg = sd / "cf_log.npz"                                       # cf runs log the servo targets the controller wrote (100 Hz): use them
+    if lg.exists() and "ctrl_f" in np.load(lg).files:
+        L = np.load(lg); ln = [str(x) for x in L["fj"]]; c_log = np.stack([np.interp(ts, L["t"], L["ctrl_f"][:, ln.index(nm)]) for nm in names], 1)
+        lj = [j for j, nm in enumerate(names) if any(nm.startswith(f"mano_{f}_") and nm in CLOSE_W[f] for f in loaded)]
+        dd = np.degrees(np.abs(c_log - q_cmd)[:, lj]); ck["cmd_formula_vs_log_deg"] = dict(median=round(float(np.median(dd)), 3), p99=round(float(np.percentile(dd, 99)), 3))
+        q_cmd = c_log; ck["q_cmd_source"] = "cf_log ctrl_f"
+    else:
+        ck["q_cmd_source"] = "formula (grasp q + CLOSE_W delta + pulp)"
     wsum = sum(sum(w.values()) for w in CLOSE_W.values())
     closure = sum(w * q[:, names.index(j)] for f in FINGERS for j, w in CLOSE_W[f].items()) / wsum
     Tw = hp["wrist_T_world"]; grip = f_cmd[:, [FINGERS.index(f) for f in loaded]].sum(1)
     state = np.concatenate([Tw[:, :3, 3], rot6d(Tw[:, :3, :3]), closure[:, None], q], 1).astype(np.float32)
     act_vtf = np.concatenate([Tw[:, :3, 3], rot6d(Tw[:, :3, :3]), grip[:, None], q_cmd], 1).astype(np.float32)
+    act_cmd = np.concatenate([Tw[:, :3, 3], rot6d(Tw[:, :3, :3]), closure[:, None], q_cmd], 1).astype(np.float32)   # B': commanded joints, closure in slot 9
     tz = np.load(ds / row["tactile"]); touch = tz["touch"].astype(np.float32); tot = touch.sum(1)
     push = f_cmd[:, :5] > 1.0; off = []
     for f in loaded:
@@ -105,7 +118,7 @@ def build_row(ds, row, cases):
     ck["abs_cmd_minus_q_p99_deg"] = float(np.degrees(np.percentile(np.abs(off), 99)))
     ck["ok"] = bool(ck["frames"] == N and ck["finite"] and ck["t_sim_in_replay"] and ck["abs_cmd_minus_q_p99_deg"] < 60.0 and touch.shape == (N, 880))
     (ds / "vtla").mkdir(exist_ok=True)
-    np.savez_compressed(ds / "vtla" / f"{cid}.npz", state=state, act_vts=state.copy(), act_vtf=act_vtf, q_cmd=q_cmd.astype(np.float32), q=q.astype(np.float32),
+    np.savez_compressed(ds / "vtla" / f"{cid}.npz", state=state, act_vts=state.copy(), act_obs=state.copy(), act_vtf=act_vtf, act_cmd=act_cmd, q_cmd=q_cmd.astype(np.float32), q=q.astype(np.float32),
                         f_cmd=f_cmd.astype(np.float32), f_glove=f_glove.astype(np.float32), f_sim=f_sim.astype(np.float32), part_names=np.array(PARTS), closure=closure.astype(np.float32),
                         grip_N=grip.astype(np.float32), tactile=touch, t=(np.arange(N) / 16).astype(np.float32), t_sim=ts.astype(np.float32),
                         loaded=np.array([f in loaded for f in FINGERS]), joint_names=np.array(names))
